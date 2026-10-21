@@ -17,6 +17,7 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
+	"github.com/hoangdaulan/lan-lab-backend/internal/student"
 )
 
 func main() {
@@ -50,10 +51,17 @@ func run(log *slog.Logger) error {
 	authSvc := auth.NewService(auth.NewRepository(pool),
 		auth.NewJWTSigner(cfg.JWTSecret, cfg.AccessTokenTTL), cfg.RefreshTokenTTL)
 	authHandler := auth.NewHandler(authSvc, log)
+	studentHandler := student.NewHandler(student.NewService(student.NewRepository(pool), authSvc), log)
 
 	router := httpx.NewRouter(pool)
 	router.Route("/api/v1", func(r chi.Router) {
 		authHandler.Register(r)
+
+		// Teacher-only routes.
+		r.Group(func(r chi.Router) {
+			r.Use(auth.Authenticate(authSvc), auth.RequireRole(auth.RoleTeacher))
+			studentHandler.Register(r)
+		})
 	})
 
 	srv := &http.Server{
