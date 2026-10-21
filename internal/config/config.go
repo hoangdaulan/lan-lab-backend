@@ -20,8 +20,12 @@ type Config struct {
 
 	// JWTSecret signs access tokens. Refresh tokens are random strings stored
 	// only as hashes (see BACKEND_CONTEXT.md §4), so they need no secret.
-	// TTLs and signing algorithm are not decided yet.
+	// Algorithm is HS256 (BACKEND_CONTEXT.md §17).
 	JWTSecret string
+
+	// AccessTokenTTL is the JWT lifetime; RefreshTokenTTL the refresh token's.
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
 
 	// DataDir is the server-managed root for submitted sources and test files.
 	// DB columns store paths relative to this directory.
@@ -58,6 +62,12 @@ func Load() (Config, error) {
 	if cfg.WorkerPollInterval, err = getenvDuration("WORKER_POLL_INTERVAL", time.Second); err != nil {
 		return Config{}, err
 	}
+	if cfg.AccessTokenTTL, err = getenvDuration("ACCESS_TOKEN_TTL", 15*time.Minute); err != nil {
+		return Config{}, err
+	}
+	if cfg.RefreshTokenTTL, err = getenvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour); err != nil {
+		return Config{}, err
+	}
 	if cfg.WorkerID == "" {
 		cfg.WorkerID, _ = os.Hostname()
 	}
@@ -69,8 +79,8 @@ func (c Config) RequireAPI() error {
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("DATABASE_URL is required"))
 	}
-	if c.JWTSecret == "" {
-		errs = append(errs, errors.New("JWT_SECRET is required"))
+	if len(c.JWTSecret) < 32 {
+		errs = append(errs, errors.New("JWT_SECRET is required and must be at least 32 characters"))
 	}
 	if c.DataDir == "" {
 		errs = append(errs, errors.New("DATA_DIR is required"))

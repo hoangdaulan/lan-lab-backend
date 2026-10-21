@@ -11,6 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/hoangdaulan/lan-lab-backend/internal/auth"
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
@@ -42,9 +45,16 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Feature wiring (repository -> service -> handler, mounted under the
-	// API prefix) is added once the endpoint list is agreed.
+	// Feature wiring: repository -> service -> handler, routes under /api/v1
+	// (docs/api-v1.md).
+	authSvc := auth.NewService(auth.NewRepository(pool),
+		auth.NewJWTSigner(cfg.JWTSecret, cfg.AccessTokenTTL), cfg.RefreshTokenTTL)
+	authHandler := auth.NewHandler(authSvc, log)
+
 	router := httpx.NewRouter(pool)
+	router.Route("/api/v1", func(r chi.Router) {
+		authHandler.Register(r)
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
