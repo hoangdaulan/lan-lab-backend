@@ -10,7 +10,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
  && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
 
 # Shared runtime base: unprivileged user and the data dir that the named
 # `data` volume is mounted on (a fresh volume copies this ownership).
@@ -24,7 +25,7 @@ RUN apt-get update \
 ENV DATA_DIR=/data
 
 FROM runtime-base AS api
-COPY --from=build /out/api /out/migrate /app/
+COPY --from=build /out/api /out/migrate /out/seed /app/
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]

@@ -126,6 +126,8 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 
 **Chỉ giữ bộ test hiện tại. Không thêm version vào `test_cases`, không giữ bộ test cũ để chấm lịch sử.**
 
+> **Đã thay thế ngày 21/10/2026:** quy trình "`PUT` thay bộ test" bên dưới không còn áp dụng. Giáo viên sửa file `.in/.out` trực tiếp trên máy server rồi bấm "Chấm lại"; xem mục 17. Các nguyên tắc version/kết quả hiện hành còn lại của mục này vẫn giữ.
+
 Khi `PUT` thay bộ test của problem:
 
 1. Ghi file test mới vào đường dẫn mới, không ghi đè file đang dùng.
@@ -313,3 +315,47 @@ queries/       câu SQL cho sqlc
 
 - Đã tạo scaffold và stub; **chưa triển khai chức năng**.
 - **Chưa** chạy `docker compose up`, chưa build image, chưa chạy migration. Các thao tác này cần duyệt riêng.
+- Cập nhật cùng ngày: người dùng duyệt chạy thử. Image đã build, `00001_init.sql` đã chạy thành công trên PostgreSQL 16 (12 bảng, 13 index), `/healthz` trả 200 qua localhost và IP LAN.
+
+## 17. Quyết định API v1 ngày 21/10/2026
+
+Người dùng duyệt các quyết định dưới đây. Danh sách endpoint chi tiết: `docs/api-v1.md`.
+
+### Compiler
+
+- Compiler chính thức: **g++ 12.2 (Debian bookworm, `12.2.0-14+deb12u1`)** trong image worker, `-std=c++17`.
+
+### Đăng nhập và token
+
+- Một endpoint `POST /api/v1/auth/login` với `role` (`teacher` | `student`) trong body, vì `code` chỉ duy nhất trong từng bảng.
+- Access token: JWT **HS256**, sống **15 phút**, gửi qua `Authorization: Bearer`; FE giữ trong bộ nhớ.
+- Refresh token: chuỗi ngẫu nhiên, sống **7 ngày**, trả trong **JSON body** (không dùng cookie); DB lưu SHA-256. Rotation một lần dùng như mục 4.
+- Mật khẩu băm bằng **bcrypt** (`golang.org/x/crypto/bcrypt`, cost mặc định 10). Lý do: thư viện chuẩn của hệ sinh thái Go, có sẵn salt, đủ cho ~50 tài khoản trên LAN; không cần tinh chỉnh tham số bộ nhớ như argon2id. Giới hạn bcrypt 72 byte nên mật khẩu tối đa 72 byte.
+
+### Tài khoản và phiên
+
+- Giáo viên đầu tiên tạo bằng `cmd/seed` đọc biến môi trường. Sinh viên được giáo viên tạo qua API (từng người hoặc import CSV), mật khẩu mặc định = MSV.
+- Mọi sinh viên thấy mọi phiên; chỉ tham gia được trong khung giờ phiên. Không có danh sách gán trước hay mã truy cập.
+- Sinh viên không xem đề trước `starts_at`; chỉ thấy verdict tổng + passed/total, **không** thấy kết quả từng test; không xem tổng hợp của sinh viên khác.
+
+### Test trên đĩa và chấm lại (thay quy trình PUT ở mục 8)
+
+- Test là các cặp `.in/.out` trong thư mục cố định của problem dưới `DATA_DIR`; DB lưu đường dẫn tương đối. Không có API upload test.
+- Giáo viên sửa file trực tiếp trên máy server, rồi bấm **"Chấm lại"** (`POST /api/v1/problems/{id}/rejudge`). Nút nằm ở trang phiên nhưng chấm lại **mọi bài nộp của problem ở mọi phiên**, vì `version` gắn với problem.
+- Chấm lại: quét thư mục, kiểm tra mỗi `.in` có `.out` và bộ test không rỗng, đồng bộ `test_cases`, tăng `version` một lần, obsolete run/job cũ, tạo run/job mới — cùng một transaction.
+- Đổi `time_limit_ms` hoặc `memory_limit_mb` cũng tăng `version` và chấm lại (đóng điểm mở ở mục 8).
+- Giới hạn đã biết: sửa file mà không bấm "Chấm lại" thì kết quả cũ vẫn hiển thị như hiện hành. Worker chép test sang thư mục riêng khi nhận job; lần chấm đọc lẫn file đang sửa sẽ bị obsolete khi version tăng.
+- Compose dùng **bind mount `./data:/data`** (thay named volume) để giáo viên sửa file trên máy; thư mục thuộc uid 10001, bị git-ignore.
+
+### Khác
+
+- Prefix `/api/v1`. Source nộp tối đa **64 KB**.
+- WebSocket: access token gửi trong message đầu tiên (không đặt trên URL), kiểm tra Origin, message JSON `{"type": ..., "data": ...}`.
+- v1 gồm: chấm lại thủ công một bài nộp, thống kê hàng đợi `/admin/queue`, export CSV. Export zip để sau.
+
+### Ghi chú triển khai auth (nhánh `feature/auth`)
+
+- `code` tài khoản được chuẩn hóa **trim + viết hoa** trước khi lưu và khi tra cứu (đề xuất của agent, cần người dùng xác nhận nếu MSV/mã GV có chữ thường cần giữ nguyên).
+- Login, refresh, đổi mật khẩu khóa hàng tài khoản trước rồi mới tới refresh token; login và đổi mật khẩu kiểm tra lại `password_hash` dưới khóa.
+- **sqlc chưa dùng**: môi trường agent không tải được sqlc, nên repository auth viết tay bằng pgx. `sqlc.yaml` và `make sqlc` vẫn giữ để chuyển sang sau.
+- Thư mục `./data` bind mount; container chạy với `APP_UID:APP_GID` (mặc định 10001) phải trùng chủ sở hữu `./data`.
