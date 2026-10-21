@@ -16,7 +16,9 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/auth"
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
+	"github.com/hoangdaulan/lan-lab-backend/internal/exam"
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
+	"github.com/hoangdaulan/lan-lab-backend/internal/problem"
 	"github.com/hoangdaulan/lan-lab-backend/internal/student"
 )
 
@@ -52,15 +54,28 @@ func run(log *slog.Logger) error {
 		auth.NewJWTSigner(cfg.JWTSecret, cfg.AccessTokenTTL), cfg.RefreshTokenTTL)
 	authHandler := auth.NewHandler(authSvc, log)
 	studentHandler := student.NewHandler(student.NewService(student.NewRepository(pool), authSvc), log)
+	examHandler := exam.NewHandler(exam.NewService(exam.NewRepository(pool), nil), log)
+	problemHandler := problem.NewHandler(problem.NewService(problem.NewRepository(pool), cfg.DataDir, nil, log), log)
 
 	router := httpx.NewRouter(pool)
 	router.Route("/api/v1", func(r chi.Router) {
 		authHandler.Register(r)
 
-		// Teacher-only routes.
 		r.Group(func(r chi.Router) {
-			r.Use(auth.Authenticate(authSvc), auth.RequireRole(auth.RoleTeacher))
-			studentHandler.Register(r)
+			r.Use(auth.Authenticate(authSvc))
+			examHandler.RegisterShared(r)
+
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireRole(auth.RoleTeacher))
+				studentHandler.Register(r)
+				examHandler.RegisterTeacher(r)
+				problemHandler.RegisterTeacher(r)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireRole(auth.RoleStudent))
+				examHandler.RegisterStudent(r)
+				problemHandler.RegisterStudent(r)
+			})
 		})
 	})
 

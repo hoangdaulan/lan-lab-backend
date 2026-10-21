@@ -32,33 +32,33 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/exams` | T | Đề của giáo viên | |
-| POST | `/exams` | T | Tạo đề | |
-| GET | `/exams/{id}` | T | Chi tiết đề | |
-| PUT | `/exams/{id}` | T | Sửa đề | |
-| DELETE | `/exams/{id}` | T | Xóa đề (chặn nếu đã có bài nộp) | |
-| GET | `/exams/{id}/sessions` | T | Các phiên của đề | |
-| POST | `/exams/{id}/sessions` | T | Tạo phiên (`starts_at`, `ends_at` bắt buộc) | |
-| GET | `/sessions/{id}` | T/S | Thông tin phiên, giờ server, trạng thái của mình (S), danh sách problem | |
-| PUT | `/sessions/{id}` | T | Sửa phiên | |
-| DELETE | `/sessions/{id}` | T | Xóa phiên (chặn nếu đã có bài nộp) | |
-| GET | `/sessions/{id}/participants` | T | Người tham gia và trạng thái | |
-| GET | `/me/sessions` | S | Mọi phiên + trạng thái tham gia của mình | |
-| POST | `/sessions/{id}/join` | S | Tham gia (chỉ trong khung giờ; vào lại dùng bản ghi cũ) | |
-| POST | `/sessions/{id}/finish` | S | Kết thúc làm bài (idempotent) | |
+| GET | `/exams` | T | Đề của giáo viên | ✅ |
+| POST | `/exams` | T | Tạo đề | ✅ |
+| GET | `/exams/{id}` | T | Chi tiết đề | ✅ |
+| PUT | `/exams/{id}` | T | Sửa đề | ✅ |
+| DELETE | `/exams/{id}` | T | Xóa đề (chặn nếu còn problem hoặc phiên) | ✅ |
+| GET | `/exams/{id}/sessions` | T | Các phiên của đề | ✅ |
+| POST | `/exams/{id}/sessions` | T | Tạo phiên (`starts_at`, `ends_at` bắt buộc) | ✅ |
+| GET | `/sessions/{id}` | T/S | Thông tin phiên, giờ server, trạng thái của mình (S), danh sách problem | ✅ |
+| PUT | `/sessions/{id}` | T | Sửa phiên | ✅ |
+| DELETE | `/sessions/{id}` | T | Xóa phiên (chặn nếu đã có bài nộp) | ✅ |
+| GET | `/sessions/{id}/participants` | T | Người tham gia và trạng thái | ✅ |
+| GET | `/me/sessions` | S | Mọi phiên + trạng thái tham gia của mình | ✅ |
+| POST | `/sessions/{id}/join` | S | Tham gia (chỉ trong khung giờ; vào lại dùng bản ghi cũ) | ✅ |
+| POST | `/sessions/{id}/finish` | S | Kết thúc làm bài (idempotent) | ✅ |
 
 ## 4. Problem và test
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/exams/{id}/problems` | T | Problem của đề | |
-| POST | `/exams/{id}/problems` | T | Tạo problem; tạo thư mục test trên đĩa | |
-| GET | `/problems/{id}` | T | Chi tiết problem | |
-| PUT | `/problems/{id}` | T | Sửa; đổi time/memory limit → tăng version + chấm lại | |
-| DELETE | `/problems/{id}` | T | Xóa (chặn nếu đã có bài nộp) | |
-| GET | `/problems/{id}/tests` | T | Danh sách test hiện có trong DB (đường dẫn, kích thước) | |
-| POST | `/problems/{id}/rejudge` | T | Quét thư mục test, đồng bộ `test_cases`, tăng version, chấm lại mọi bài nộp của problem ở mọi phiên | |
-| GET | `/sessions/{sid}/problems/{pid}` | S | Đề bài; chỉ từ `starts_at` | |
+| GET | `/exams/{id}/problems` | T | Problem của đề | ✅ |
+| POST | `/exams/{id}/problems` | T | Tạo problem; tạo thư mục test trên đĩa | ✅ |
+| GET | `/problems/{id}` | T | Chi tiết problem | ✅ |
+| PUT | `/problems/{id}` | T | Sửa; đổi time/memory limit → tăng version + chấm lại | ✅ |
+| DELETE | `/problems/{id}` | T | Xóa (chặn nếu đã có bài nộp) | ✅ |
+| GET | `/problems/{id}/tests` | T | Danh sách test hiện có trong DB (đường dẫn tương đối) | ✅ |
+| POST | `/problems/{id}/rejudge` | T | Quét thư mục test, đồng bộ `test_cases`, tăng version, chấm lại mọi bài nộp của problem ở mọi phiên | ✅ |
+| GET | `/sessions/{sid}/problems/{pid}` | S | Đề bài; chỉ từ `starts_at` và sau khi đã tham gia | ✅ |
 
 ## 5. Nộp bài
 
@@ -199,3 +199,49 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 ### `POST /students/{id}/reset-password`
 
 204. Mật khẩu về lại `code`; xóa mọi refresh token của sinh viên. Access token đã cấp còn hiệu lực tới hết hạn (≤ 15 phút). 404 nếu không có sinh viên.
+
+## Chi tiết Đề, phiên và problem
+
+### Quy tắc chung
+
+- Giáo viên chỉ thấy và sửa đề của chính mình; đề/phiên/problem của giáo viên khác trả 404.
+- Thời gian dùng RFC 3339 (`2026-10-21T09:00:00Z`). Server là nguồn thời gian; `state` của phiên là `upcoming` (trước `starts_at`), `running` (`starts_at <= now < ends_at`) hoặc `ended`.
+- Lỗi: 400 dữ liệu sai, 403 sai vai trò hoặc chưa được xem, 404 không có/không thuộc quyền, 409 trạng thái không cho phép. Body `{"error": "..."}`.
+
+### Đề
+
+- `POST /exams`, `PUT /exams/{id}`: `{"title": "...", "description": "..."}`; `title` 1–255 ký tự.
+- `GET /exams` → `{"items": [exam...]}`, mới nhất trước. Exam: `{id, title, description, created_at, updated_at}`.
+- `DELETE /exams/{id}` → 204; 409 nếu đề còn problem hoặc phiên (xóa chúng trước).
+
+### Phiên
+
+- `POST /exams/{id}/sessions`, `PUT /sessions/{id}`: `{"name": "...", "starts_at": "...", "ends_at": "..."}`; bắt buộc cả hai mốc, `ends_at > starts_at`. Backend không tự đặt thời lượng.
+- Session: `{id, exam_id, exam_title, name, starts_at, ends_at, state}`.
+- `DELETE /sessions/{id}` → 204 (xóa luôn danh sách tham gia); 409 nếu đã có bài nộp.
+- `GET /sessions/{id}/participants` (T) → `{"items": [participant...]}`. Participant: `{id, session_id, student_id, student_code, student_fullname, status, joined_at, finished_at}`; `status` là `in_progress` hoặc `finished`.
+- `GET /sessions/{id}` (T/S) → `{"session": ..., "server_time": ..., "problems": [{id, code, title}], "problems_hidden": bool}`; sinh viên có thêm `participation` (participant hoặc `null`). Với sinh viên, trước `starts_at` thì `problems` rỗng và `problems_hidden = true`.
+- `GET /me/sessions` (S) → `{"server_time": ..., "items": [session + "participation"]}`: mọi phiên của mọi đề.
+- `POST /sessions/{id}/join` (S) → 200 participant. Chưa tham gia: chỉ được khi `running`, ngoài ra 409 (`session has not started` / `session has ended`). Đã tham gia: trả bản ghi cũ ở mọi trạng thái (vào lại sau mất mạng).
+- `POST /sessions/{id}/finish` (S) → 200 participant `finished`. Gọi lại trả kết quả cũ, không đổi `finished_at`. 409 nếu chưa tham gia. Không có API mở lại.
+
+### Problem
+
+- `POST /exams/{id}/problems`, `PUT /problems/{id}` (cập nhật toàn bộ):
+
+```json
+{"code": "A", "title": "Tong hai so", "statement": "...", "time_limit_ms": 1000, "memory_limit_mb": 256}
+```
+
+  `code` trim + viết hoa, 1–20 ký tự, không khoảng trắng, duy nhất trong đề (409 nếu trùng). `time_limit_ms` 1–10000, `memory_limit_mb` 1–1024 (chặn nhập nhầm, chưa phải giới hạn chính thức).
+- Problem: `{id, exam_id, code, title, statement, time_limit_ms, memory_limit_mb, version, test_dir, created_at, updated_at}`. `test_dir` là thư mục test tương đối với `DATA_DIR` (trên máy server: `./data/problems/<id>/tests`), được tạo khi tạo problem.
+- `PUT /problems/{id}` → `{"problem": ..., "rejudge_queued": bool}`. Đổi `time_limit_ms` hoặc `memory_limit_mb` → `version + 1` và chấm lại (`rejudge_queued: true`); chỉ sửa chữ thì không.
+- `DELETE /problems/{id}` → 204 (xóa luôn các dòng `test_cases`; file test trên đĩa giữ nguyên); 409 nếu đã có bài nộp.
+- `GET /problems/{id}/tests` → `{"test_dir": ..., "items": [{id, input, output}]}` theo thứ tự chấm.
+- `POST /problems/{id}/rejudge` → quét `test_dir`:
+  - mỗi `N.in` phải có `N.out` và ngược lại; file rỗng hợp lệ; file khác đuôi và file ẩn bị bỏ qua; symlink/thư mục con bị từ chối; tối đa 500 test;
+  - thứ tự: tên là số thì theo số (`2` trước `10`), còn lại theo tên;
+  - lỗi file → 409, không đổi gì;
+  - thành công → thay `test_cases`, `version + 1`, chấm lại mọi bài nộp của problem ở mọi phiên → `{"problem": ..., "tests": [{name, input, output, input_size, output_size}], "rejudge_queued": true}`.
+  - Phần tạo lượt chấm lại hiện là stub (chưa có bài nộp/worker); triển khai ở bước submission + judge.
+- `GET /sessions/{id}/problems/{pid}` (S) → `{id, code, title, statement, time_limit_ms, memory_limit_mb}`. 403 trước `starts_at` hoặc khi chưa tham gia phiên; 404 nếu problem không thuộc đề của phiên. Sau khi phiên kết thúc vẫn xem được.

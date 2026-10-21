@@ -359,3 +359,14 @@ Người dùng duyệt các quyết định dưới đây. Danh sách endpoint c
 - Login, refresh, đổi mật khẩu khóa hàng tài khoản trước rồi mới tới refresh token; login và đổi mật khẩu kiểm tra lại `password_hash` dưới khóa.
 - **sqlc chưa dùng**: môi trường agent không tải được sqlc, nên repository auth viết tay bằng pgx. `sqlc.yaml` và `make sqlc` vẫn giữ để chuyển sang sau.
 - Thư mục `./data` bind mount; container chạy với `APP_UID:APP_GID` (mặc định 10001) phải trùng chủ sở hữu `./data`.
+
+### Ghi chú triển khai sinh viên, đề, phiên, problem (nhánh `feature/students`, `feature/exams`)
+
+Các lựa chọn dưới đây do agent đề xuất khi triển khai, **cần người dùng xác nhận**:
+
+- Import CSV: dòng lỗi (thiếu/quá dài, trùng trong file) từ chối cả file; `code` đã có trong DB thì bỏ qua và báo lại. Cột `class` bị bỏ qua vì bảng `students` không có cột lớp.
+- Giáo viên chỉ thấy đề của mình (404 với đề của giáo viên khác).
+- Xóa đề chỉ khi đề không còn problem và phiên; xóa phiên/problem bị chặn nếu đã có bài nộp. Xóa problem không xóa file test trên đĩa.
+- Sinh viên phải **tham gia phiên** mới xem được nội dung đề; danh sách problem (mã, tên) hiện từ `starts_at`. Đề vẫn xem được sau khi phiên kết thúc.
+- Mã problem trim + viết hoa; `time_limit_ms` 1–10000, `memory_limit_mb` 1–1024.
+- Phần tạo lượt chấm lại khi tăng version (`requeueProblem`) là stub cho tới bước submission + judge.
