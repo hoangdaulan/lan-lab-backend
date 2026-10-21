@@ -267,3 +267,49 @@ Nếu tài liệu này được chép sang repo backend riêng, cần mang theo 
 Tại lúc bàn giao, người dùng chỉ yêu cầu tạo tài liệu này. **Chưa được tự chuyển sang bước triển khai.**
 
 Khi có yêu cầu mới: đọc tài liệu này và SQL, kiểm tra trạng thái repo thực tế, xác định đúng bước được giao. Các bước dự kiến sau thiết kế là tạo/kiểm chứng migration PostgreSQL, chốt API rồi triển khai luồng tối thiểu; phải duyệt từng bước, không tự làm đồng loạt.
+
+## 16. Quyết định bổ sung ngày 21/10/2026 (bước scaffold)
+
+Người dùng xác nhận tiếp tục theo tài liệu này (**Go + PostgreSQL, bản đầu chỉ C++17**) và duyệt các lựa chọn dưới đây. Mục này **bổ sung**, không thay đổi các quyết định ở trên.
+
+### Thư viện đã chốt
+
+| Mục | Lựa chọn |
+|---|---|
+| HTTP router | `github.com/go-chi/chi/v5` |
+| PostgreSQL driver/pool | `github.com/jackc/pgx/v5` (`pgxpool`) |
+| Truy vấn | `sqlc` (sinh code từ `migrations/` + `queries/` vào `internal/db/sqlc`) |
+| Migration | `github.com/pressly/goose/v3`, file SQL nhúng vào binary `cmd/migrate` |
+| WebSocket | `github.com/coder/websocket` |
+
+### Bố cục mã nguồn (package-by-feature)
+
+```
+cmd/api        HTTP API (REST + WebSocket), /healthz ping DB
+cmd/worker     tiến trình chấm, tách khỏi API
+cmd/migrate    chạy goose với migration nhúng
+internal/config   đọc biến môi trường
+internal/db       tạo pgxpool
+internal/httpx    router gốc, helper JSON, nâng cấp WebSocket
+internal/{auth,exam,problem,submission,judge}
+                  mỗi feature: handler.go → service.go → repository.go
+migrations/    00001_init.sql = DDL của database/schema-design.sql bọc goose
+queries/       câu SQL cho sqlc
+```
+
+- Interface đặt ở ranh giới **service ↔ repository**: `service.go` khai báo `Repository`, `repository.go` cài đặt bằng pgx. Handler gọi `*Service`.
+- Đường dẫn API và việc mount router feature **chưa chốt**; scaffold chỉ có `/healthz`.
+
+### Docker Compose (phương án B)
+
+- Một Dockerfile multi-stage: một stage build Go cho cả `api`, `worker`, `migrate`; stage `api` và `worker` riêng. Stage `worker` cài `build-essential` (g++ của Debian bookworm). **Phiên bản compiler chính thức vẫn phải ghi lại/cố định trước khi chấm.**
+- Service: `postgres` (16, healthcheck, volume `pgdata`, không publish port), `api` (đợi postgres healthy, publish `0.0.0.0:8080`), `worker` (đợi postgres healthy).
+- Volume `data` dùng chung giữa `api` và `worker` cho source và file test (`DATA_DIR=/data`).
+- Mạng `db` là `internal`: worker chỉ nối được PostgreSQL, không ra LAN/Internet; `api` nối thêm mạng `web` để publish port.
+- Container worker **không phải sandbox**. Bước judge phải chạy chương trình sinh viên không có mạng, có timeout, giới hạn bộ nhớ/tiến trình/output bằng `setrlimit`, dưới user không đặc quyền.
+- Biến môi trường: `DATABASE_URL`, `JWT_SECRET`, `DATA_DIR`, `HTTP_ADDR`, `WORKER_CONCURRENCY`, `WORKER_POLL_INTERVAL`, `WORKER_ID`; mẫu ở `.env.example`.
+
+### Trạng thái
+
+- Đã tạo scaffold và stub; **chưa triển khai chức năng**.
+- **Chưa** chạy `docker compose up`, chưa build image, chưa chạy migration. Các thao tác này cần duyệt riêng.
