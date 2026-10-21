@@ -23,10 +23,10 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/students` | T | Danh sách sinh viên | |
-| POST | `/students` | T | Tạo 1 sinh viên, mật khẩu mặc định = MSV | |
-| POST | `/students/import` | T | Import CSV (`code,fullname`) | |
-| POST | `/students/{id}/reset-password` | T | Đặt lại mật khẩu về MSV | |
+| GET | `/students` | T | Danh sách sinh viên, tìm theo code/tên, phân trang | ✅ |
+| POST | `/students` | T | Tạo 1 sinh viên, mật khẩu mặc định = MSV | ✅ |
+| POST | `/students/import` | T | Import CSV (`code,full_name[,class]`) | ✅ |
+| POST | `/students/{id}/reset-password` | T | Đặt lại mật khẩu về MSV, thu hồi refresh token | ✅ |
 
 ## 3. Đề và phiên
 
@@ -151,3 +151,51 @@ Request `{"current_password": "...", "new_password": "..."}`; 204. Mật khẩu 
 ### JWT
 
 HS256, ký bằng `JWT_SECRET`. Claims: `sub` (id dạng chuỗi), `role`, `iat`, `exp` (15 phút).
+
+## Chi tiết Sinh viên
+
+Mọi route yêu cầu access token của **giáo viên** (403 nếu là sinh viên). `code` được trim + viết hoa; `fullname` được gộp khoảng trắng. Giới hạn: `code` 1–50 ký tự, không chứa khoảng trắng; `fullname` 1–200 ký tự. Mật khẩu ban đầu = `code`.
+
+Đối tượng sinh viên:
+
+```json
+{"id": 2, "code": "B21DCCN001", "fullname": "Nguyen Van A",
+ "created_at": "2026-10-21T09:00:00Z", "updated_at": "2026-10-21T09:00:00Z"}
+```
+
+### `POST /students`
+
+Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã tồn tại.
+
+### `GET /students?q=&limit=50&offset=0`
+
+`q` tìm chuỗi con (không phân biệt hoa thường) trong `code` hoặc `fullname`. `limit` mặc định 50, tối đa 200. Sắp theo `code`.
+
+```json
+{"items": [ ... ], "total": 3, "limit": 50, "offset": 0}
+```
+
+### `POST /students/import`
+
+`multipart/form-data`, trường `file` là CSV UTF-8 (cho phép BOM của Excel), tối đa 1 MiB / 1000 dòng.
+
+- Dòng đầu là header, phải có cột `code` và `full_name` (hoặc `fullname`); thứ tự cột tùy ý. Cột khác (ví dụ `class`) bị bỏ qua vì bảng `students` không có cột lớp.
+- **Dòng lỗi** (thiếu/quá dài, `code` lặp lại trong cùng file): từ chối cả file, **không lưu gì**, trả 400:
+
+```json
+{"error": "import rejected, nothing was saved: 2 invalid row(s)",
+ "row_errors": [{"line": 3, "code": "SV02", "error": "fullname is required"},
+                {"line": 4, "code": "SV01", "error": "duplicate of line 2 in this file"}]}
+```
+
+- **`code` đã có trong DB**: bỏ qua dòng đó và báo lại (import lại cùng danh sách là an toàn). Các dòng còn lại được thêm trong một transaction.
+
+```json
+{"created_count": 2, "skipped_count": 1,
+ "created": [ ...đối tượng sinh viên... ],
+ "skipped": [{"line": 3, "code": "SV02", "reason": "already exists"}]}
+```
+
+### `POST /students/{id}/reset-password`
+
+204. Mật khẩu về lại `code`; xóa mọi refresh token của sinh viên. Access token đã cấp còn hiệu lực tới hết hạn (≤ 15 phút). 404 nếu không có sinh viên.
