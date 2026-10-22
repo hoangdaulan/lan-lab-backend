@@ -24,7 +24,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 4 | Quản lý sinh viên | ✅ xong |
 | 5 | Đề, phiên, tham gia | ✅ xong |
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong (xếp hàng chấm lại ở phase 10) |
-| 7 | Nộp bài | chưa làm |
+| 7 | Nộp bài | ✅ xong |
 | 8 | Hàng đợi chấm bền vững | chưa làm |
 | 9 | Sandbox chấm C++17 | chưa làm |
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | chưa làm |
@@ -253,23 +253,24 @@ scripts/smoke.sh problems
 **Mục tiêu:** SV nộp một file `.cpp` ≤ 64 KB trong phiên; server ghi nhận bền vững rồi mới báo thành công.
 
 **Công việc**
-- `POST /sessions/{id}/problems/{pid}/submissions` (multipart `file`): ghi `received_at` ngay khi nhận đủ file; lưu file vào `DATA_DIR/submissions/<yyyy>/<mm>/<uuid>.cpp` (tên server tạo), `fsync`.
+- `POST /sessions/{id}/problems/{pid}/submissions` (multipart `file`): ghi `received_at` ngay khi nhận đủ file; lưu file vào `DATA_DIR/submissions/<yyyy>/<mm>/<32 hex>.cpp` (tên server tạo), `fsync`.
 - Transaction: khóa problem (SHARE) → session → participant `FOR UPDATE`; kiểm tra SV từ JWT là chủ participant, `status = in_progress`, problem thuộc đề của phiên, `starts_at <= received_at < ends_at`, bộ test không rỗng; tạo submission + run (version hiện hành) + job; COMMIT rồi mới trả 202.
 - DB lỗi: không báo nhận; file mồ côi dọn sau (job dọn định kỳ, có khoảng chờ).
 - `GET /sessions/{id}/submissions` (S: của mình; T: lọc), `GET /submissions/{id}`, `GET /submissions/{id}/source`, `GET /submissions/{id}/tests` (T).
 - Chặn (Đã chốt 22/10/2026, câu 4): tên file không đuôi `.cpp`, file > 64 KB, file rỗng. Không bắt buộc UTF-8.
 
 **Checklist**
-- [ ] Nộp hợp lệ → 202 + id; có đủ submission + run `queued` + job `queued` trong DB
-- [ ] Nộp sau `ends_at` (theo `received_at`) → 409; trước `starts_at` → 409
-- [ ] Đã finish → 409; chưa join → 409/403
-- [ ] File 64 KB + 1 byte → 413/400; file rỗng → 400
-- [ ] Nộp problem của đề khác → 404
-- [ ] Problem chưa có test → 409
-- [ ] Nộp và finish đồng thời (2 request song song): kết quả nhất quán với thứ tự khóa (test tích hợp)
-- [ ] DB lỗi giả lập → không trả 202, file được đánh dấu mồ côi
-- [ ] SV không xem được bài/mã nguồn của SV khác (404)
-- [ ] Unit test service với fake repo + fake storage
+- [x] Swagger + `docs/api-v1.md` đồng bộ — 22/10: thêm 5 thao tác (tổng 37), `swagger.json` ≡ `swagger.yaml`, `go test ./internal/httpx/` ok
+- [x] Nộp hợp lệ → 202 + id; có đủ submission + run `queued` + job `queued` trong DB — 22/10: `scripts/smoke.sh submissions` 23/23; psql: 18 submission = 18 run queued = 18 job queued, mỗi bài đúng 1 run + 1 job, version run = version problem, 18 file trên đĩa
+- [x] Nộp sau `ends_at` (theo `received_at`) → 409; trước `starts_at` → 409 — 22/10: GV dời giờ phiên sau khi SV join → `not started`; phiên hết hạn 2 s → `ended`
+- [x] Đã finish → 409; chưa join → 409/403 — 22/10: cả hai 409
+- [x] File 64 KB + 1 byte → 413/400; file rỗng → 400 — 22/10: đúng 64 KB → 202; 64 KB + 1 → 413; body 300 KB → 413; rỗng 400; đuôi `.c` 400
+- [x] Nộp problem của đề khác → 404 — 22/10: `scripts/smoke.sh submissions` 23/23
+- [x] Problem chưa có test → 409 — 22/10: `the problem has no tests yet`
+- [x] Nộp và finish đồng thời (2 request song song): kết quả nhất quán với thứ tự khóa (test tích hợp) — 22/10: 16 lần thử song song (finish lệch 0–70 ms): 14 nộp thắng, 2 finish thắng; 202 ⇔ có bản ghi, 409 `finished` ⇔ không có bản ghi; psql: 0 bài có `received_at >= finished_at`
+- [x] DB lỗi giả lập → không trả 202, file được đánh dấu mồ côi — 22/10: unit test `TestSubmitDBErrorLeavesOrphanAndFails` (lỗi DB → lỗi, file giữ lại); bị từ chối theo quy tắc → file xóa ngay (`TestSubmitRejectedByRuleRemovesFile`). Dọn file mồ côi định kỳ: phase 14
+- [x] SV không xem được bài/mã nguồn của SV khác (404) — 22/10: chi tiết + source 404; danh sách SV khác rỗng; SV đọc `/tests` → 403
+- [x] Unit test service với fake repo + fake storage — 22/10: `go test -race ./internal/submission/` ok (8 test, gồm storage thật trên thư mục tạm, chặn path traversal)
 
 **Kiểm tra cuối phase**
 ```bash
@@ -315,7 +316,7 @@ go test -race -count=1 -tags=integration ./internal/judge/
 - Biên dịch: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE` (Đã chốt 22/10/2026, câu 2), timeout 10 s, giới hạn bộ nhớ/output biên dịch; ghi `compiler_info` thực tế; compile output cắt gọn.
 - Chạy từng test: user không đặc quyền, không mạng (network namespace riêng hoặc tương đương), `setrlimit` CPU/AS/NPROC/FSIZE/NOFILE, wall-clock timeout, giới hạn stdout; đo thời gian + bộ nhớ.
 - So sánh theo token (bỏ qua khoảng trắng/xuống dòng).
-- Verdict test: AC/WA/TLE/MLE/RE; verdict run: CE ở cấp run; AC khi tất cả test AC. Chạy **hết** mọi test; verdict tổng = verdict của test sai đầu tiên theo thứ tự (Đã chốt 22/10/2026, câu 1); API trả `passed_tests`, `total_tests`, `verdict` để FE hiện `10/15 TLE`.
+- Verdict test: AC/WA/TLE/MLE/RE; verdict run: CE ở cấp run; AC khi tất cả test AC. Chạy test theo thứ tự, **dừng ở test không AC đầu tiên**; `passed_tests` = số test đúng trước đó, verdict tổng = verdict của test đó (Đã chốt 22/10/2026, câu 1); API trả `passed_tests`, `total_tests`, `verdict` để FE hiện `10/15 TLE`.
 - Ghi kết quả từng test + tổng hợp run + job done trong một transaction (kiểm tra lại version/lease dưới khóa).
 
 **Checklist**
@@ -456,8 +457,8 @@ Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai.
 ### Chặn phase 7–9
 
 1. **Chọn verdict tổng** khi một bài có nhiều loại lỗi; có dừng sau test sai đầu tiên không?
-   - **Đã chốt 22/10/2026: duyệt.** FE hiển thị dạng `10/15 TLE` = `passed_tests/total_tests` + verdict tổng, nên API trả cả ba trường.
-   - Đề xuất: chạy **hết** mọi test (để có `passed_tests/total_tests` cho phúc khảo); verdict tổng = verdict của **test sai đầu tiên theo thứ tự test** (thứ tự `test_cases.id`). CE xét ở cấp run trước khi chạy test. Lý do: dễ giải thích cho SV, đúng với "đối chiếu số test đúng/tổng test" ở mục 6.
+   - **Đã chốt 22/10/2026 (người dùng sửa đề xuất): dừng ở test không AC đầu tiên.** `passed_tests` = số test đúng trước test đó, `total_tests` = tổng số test, verdict tổng = verdict của test đó → FE hiện `10/15 TLE` khi test 11 TLE. Test còn lại không chạy, không ghi dòng kết quả.
+   - ~~Đề xuất ban đầu: chạy **hết** mọi test (để có `passed_tests/total_tests` cho phúc khảo); verdict tổng = verdict của **test sai đầu tiên theo thứ tự test** (thứ tự `test_cases.id`). CE xét ở cấp run trước khi chạy test. Lý do: dễ giải thích cho SV, đúng với "đối chiếu số test đúng/tổng test" ở mục 6.~~
 2. **Cờ biên dịch** và giới hạn khi biên dịch.
    - **Đã chốt 22/10/2026: duyệt.**
    - Đề xuất: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch **10 giây**. `-static` để chương trình không phụ thuộc thư viện động khi chạy trong môi trường hạn chế; `ONLINE_JUDGE` theo thói quen của các hệ chấm. Compile output trả SV được cắt gọn (vd. 8 KB).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test HTTP cho API v1 trên stack dev đang chạy (docs/IMPLEMENTATION_PLAN.md).
 #
-#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|all]
+#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|all]
 #
 # Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
 # tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
@@ -329,19 +329,151 @@ section_problems() {
 	expect "student cannot rejudge" 403
 }
 
+# make_problem TOKEN CODE -> prints id; writes 1.in/1.out and syncs tests
+make_problem() {
+	req POST "/exams/$EXAM_ID/problems" "{\"code\":\"$2\",\"title\":\"Sum\",\"statement\":\"a+b\",\"time_limit_ms\":1000,\"memory_limit_mb\":256}" "$1"
+	local id dir
+	id=$(jget 'd["id"]')
+	dir="$DATA_HOST_DIR/$(jget 'd["test_dir"]')"
+	printf '1 2\n' >"$dir/1.in"
+	printf '3\n' >"$dir/1.out"
+	req POST "/problems/$id/rejudge" "" "$1"
+	echo "$id"
+}
+
+section_submissions() {
+	echo "== submissions"
+	local tt st st2 a="SMK${RUN}S1" b="SMK${RUN}S2"
+	tt=$(teacher_token)
+	new_student "$a" "$tt" >/dev/null
+	new_student "$b" "$tt" >/dev/null
+	st=$(login "$a" "$a")
+	st2=$(login "$b" "$b")
+	make_exam "$tt"
+	local pid empty_pid
+	pid=$(make_problem "$tt" A)
+	req POST "/exams/$EXAM_ID/problems" '{"code":"B","title":"No tests","statement":"","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
+	empty_pid=$(jget 'd["id"]')
+
+	printf '#include <cstdio>\nint main(){int a,b;scanf("%%d %%d",&a,&b);printf("%%d\\n",a+b);}\n' >"$TMP/ok.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "submit before join" 409 '"join" in d["error"]'
+	req POST "/sessions/$RUNNING_ID/join" "" "$st"
+	req POST "/sessions/$RUNNING_ID/join" "" "$st2"
+
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "submit accepted" 202 'd["result"]["status"] == "queued" and d["result"]["problem_version"] == d["problem_version"] and d["student_code"] == "'"$a"'"'
+	local sid
+	sid=$(jget 'd["id"]')
+
+	cp "$TMP/ok.cpp" "$TMP/ok.c"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.c" "$st"
+	expect "wrong extension" 400
+	: >"$TMP/empty.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/empty.cpp" "$st"
+	expect "empty file" 400
+	head -c 65536 /dev/zero | tr '\0' ' ' >"$TMP/max.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/max.cpp" "$st"
+	expect "exactly 64 KB accepted" 202
+	head -c 65537 /dev/zero | tr '\0' ' ' >"$TMP/big.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/big.cpp" "$st"
+	expect "64 KB + 1 byte" 413
+	head -c 300000 /dev/zero | tr '\0' ' ' >"$TMP/huge.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/huge.cpp" "$st"
+	expect "300 KB body" 413
+	upload "/sessions/$RUNNING_ID/problems/$empty_pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "problem without tests" 409 '"no tests" in d["error"]'
+	upload "/sessions/$UPCOMING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "session not joined (upcoming)" 409
+
+	req GET "/submissions/$sid" "" "$st"
+	expect "owner reads submission" 200 "d['id'] == $sid and 'system_error' not in (d['result'] or {})"
+	req GET "/submissions/$sid" "" "$st2"
+	expect "other student cannot read" 404
+	STATUS=$(curl -s -o "$TMP/src" -w '%{http_code}' -H "Authorization: Bearer $st" "$API/submissions/$sid/source")
+	check "owner downloads source" cmp -s "$TMP/src" "$TMP/ok.cpp"
+	req GET "/submissions/$sid/source" "" "$st2"
+	expect "other student cannot download source" 404
+	req GET "/sessions/$RUNNING_ID/submissions" "" "$st2"
+	expect "student list shows only own" 200 'd["items"] == []'
+	req GET "/sessions/$RUNNING_ID/submissions?student_id=0" "" "$tt"
+	expect "bad filter" 400
+	req GET "/sessions/$RUNNING_ID/submissions?problem_id=$pid" "" "$tt"
+	expect "teacher lists session" 200 'len(d["items"]) == 2'
+	req GET "/submissions/$sid/tests" "" "$tt"
+	expect "teacher per-test results (none yet)" 200 'd["items"] == []'
+	req GET "/submissions/$sid/tests" "" "$st"
+	expect "student cannot read per-test results" 403
+
+	# The teacher moves the session start into the future: received_at < starts_at.
+	local now
+	now=$(date -u +%s)
+	req PUT "/sessions/$RUNNING_ID" "{\"name\":\"moved\",\"starts_at\":\"$(iso $((now + 600)))\",\"ends_at\":\"$(iso $((now + 3600)))\"}" "$tt"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "submit before starts_at" 409 '"not started" in d["error"]'
+	req PUT "/sessions/$RUNNING_ID" "{\"name\":\"moved\",\"starts_at\":\"$(iso $((now - 600)))\",\"ends_at\":\"$(iso $((now + 2)))\"}" "$tt"
+	sleep 3
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "submit after ends_at" 409 '"ended" in d["error"]'
+
+	# Problem of another exam through this session.
+	local other_session=$RUNNING_ID other_pid
+	make_exam "$tt"
+	other_pid=$(make_problem "$tt" Z)
+	upload "/sessions/$other_session/problems/$other_pid/submissions" "$TMP/ok.cpp" "$st"
+	expect "problem of another exam" 404
+
+	# Finished participant, and submit racing finish on the same participant.
+	req POST "/sessions/$RUNNING_ID/join" "" "$st2"
+	pid=$(make_problem "$tt" A)
+	req POST "/sessions/$RUNNING_ID/finish" "" "$st2"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/ok.cpp" "$st2"
+	expect "submit after finish" 409 '"finished" in d["error"]'
+
+	local i accepted=0 rejected=0 other=0
+	for i in $(seq 1 16); do
+		local code="SMK${RUN}R$i" tok
+		new_student "$code" "$tt" >/dev/null
+		tok=$(login "$code" "$code")
+		req POST "/sessions/$RUNNING_ID/join" "" "$tok"
+		curl -s -o "$TMP/race-sub-$i" -w '%{http_code}' -H "Authorization: Bearer $tok" -F "file=@$TMP/ok.cpp" \
+			"$API/sessions/$RUNNING_ID/problems/$pid/submissions" >"$TMP/race-sub-code-$i" &
+		# Stagger finish by 0-70 ms so both orders occur across the trials.
+		(sleep "0.0$(((i - 1) % 8))" && curl -s -o /dev/null -X POST -H "Authorization: Bearer $tok" "$API/sessions/$RUNNING_ID/finish") &
+		wait
+		local code_sub
+		code_sub=$(cat "$TMP/race-sub-code-$i")
+		req GET "/sessions/$RUNNING_ID/submissions?problem_id=$pid" "" "$tok"
+		local n
+		n=$(jget 'len(d["items"])')
+		if [[ $code_sub == 202 && $n == 1 ]]; then
+			accepted=$((accepted + 1))
+		elif [[ $code_sub == 409 && $n == 0 ]] && grep -q finished "$TMP/race-sub-$i"; then
+			rejected=$((rejected + 1))
+		else
+			other=$((other + 1))
+		fi
+	done
+	STATUS=200 BODY="{\"accepted\":$accepted,\"rejected\":$rejected,\"inconsistent\":$other}"
+	expect "submit vs finish race: 202 <=> stored, else 409 finished" 200 'd["inconsistent"] == 0'
+	echo "    race outcome: $BODY"
+}
+
 case ${1:-all} in
 auth) section_auth ;;
 students) section_students ;;
 exams) section_exams ;;
 problems) section_problems ;;
+submissions) section_submissions ;;
 all)
 	section_auth
 	section_students
 	section_exams
 	section_problems
+	section_submissions
 	;;
 *)
-	echo "usage: $0 [auth|students|exams|problems|all]" >&2
+	echo "usage: $0 [auth|students|exams|problems|submissions|all]" >&2
 	exit 2
 	;;
 esac

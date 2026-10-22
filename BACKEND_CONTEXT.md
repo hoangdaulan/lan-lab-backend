@@ -100,7 +100,7 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 - Compiler trong môi trường chấm phải được công bố và cố định; phiên bản cụ thể chưa chọn.
 - Chưa hỗ trợ Java, nhiều file, bài tương tác, chương trình tự đọc/ghi file dữ liệu hay custom checker.
 - So đáp án theo token, bỏ qua khác biệt khoảng trắng/xuống dòng; chưa hỗ trợ sai số số thực.
-- Chạy từng test; không tự suy ra cơ chế dừng sau test sai đầu tiên. Cách xử lý này cần bảo đảm yêu cầu báo số test đúng/tổng test.
+- **[Đã thay thế 22/10/2026, mục 19: dừng ở test sai đầu tiên]** Chạy từng test; không tự suy ra cơ chế dừng sau test sai đầu tiên. Cách xử lý này cần bảo đảm yêu cầu báo số test đúng/tổng test.
 - Verdict gồm **AC, WA, TLE, MLE, CE, RE**. Lỗi hạ tầng phải tách riêng.
 - **Không có điểm số**, không có `max_score`, `score` hay bảng tổng điểm số.
 - AC khi vượt qua toàn bộ test; bài không có test không được tự động AC.
@@ -384,7 +384,7 @@ Người dùng quyết định ("gộp đi") gộp `teachers` và `students` th�
 
 Người dùng trả lời các đề xuất của agent:
 
-- **Verdict:** chạy hết mọi test; verdict tổng = verdict của test sai đầu tiên theo thứ tự test (`test_cases.id`); CE xét trước khi chạy test. FE hiển thị `passed/total + verdict`, ví dụ `10/15 TLE`, nên API trả `passed_tests`, `total_tests`, `verdict`.
+- **Verdict (cập nhật cùng ngày):** chạy test theo thứ tự (`test_cases.id`) và **dừng ở test không AC đầu tiên**; `passed_tests` = số test đúng trước test đó, `total_tests` = tổng số test, verdict tổng = verdict của test đó (ví dụ test 11/15 TLE → `10/15 TLE`). Test sau đó **không chạy và không có dòng** trong `submission_test_results`. CE xét trước khi chạy test. AC khi mọi test AC. Thay câu "không tự suy ra cơ chế dừng sau test sai đầu tiên" ở mục 6.
 - **Biên dịch:** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch 10 giây, compile output trả SV được cắt gọn.
 - **Sandbox: chưa chốt.** Người dùng hỏi về `isolate` (kích thước, cách tích hợp); phase 9 chờ quyết định.
 - **File nộp:** chỉ đuôi `.cpp`, ≤ 64 KB, không rỗng; không bắt buộc UTF-8.
