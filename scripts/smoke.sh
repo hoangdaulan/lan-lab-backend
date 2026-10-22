@@ -3,7 +3,8 @@
 #
 #   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|all]
 #
-# Biến tùy chọn: BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
+# Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
+# tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
 # ./data trên host, mặc định ./data). Mỗi lần chạy tạo dữ liệu mới (mã có hậu
 # tố thời gian) và không xóa dữ liệu cũ. Cần curl và python3.
 set -uo pipefail
@@ -247,6 +248,20 @@ section_exams() {
 	expect "delete exam with children" 409
 	req DELETE "/sessions/$UPCOMING_ID" "" "$tt"
 	expect "delete session without submissions" 204
+	if [[ -n ${SMOKE_TEACHER2_CODE:-} ]]; then
+		local t2
+		t2=$(login "$SMOKE_TEACHER2_CODE" "${SMOKE_TEACHER2_PASSWORD:?set SMOKE_TEACHER2_PASSWORD}")
+		req GET "/exams/$EXAM_ID" "" "$t2"
+		expect "other teacher cannot read exam" 404
+		req PUT "/exams/$EXAM_ID" '{"title":"hijack","description":""}' "$t2"
+		expect "other teacher cannot edit exam" 404
+		req GET "/sessions/$RUNNING_ID/participants" "" "$t2"
+		expect "other teacher cannot list participants" 404
+		req GET /exams "" "$t2"
+		expect "other teacher's exam list excludes it" 200 "all(e['id'] != $EXAM_ID for e in d['items'])"
+	else
+		echo "  (skip ownership checks: set SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD)"
+	fi
 	req GET /exams/999999999 "" "$tt"
 	expect "unknown exam" 404
 	req GET /exams/abc "" "$tt"
