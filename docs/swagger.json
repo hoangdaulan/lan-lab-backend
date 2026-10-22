@@ -3,7 +3,7 @@
   "info": {
     "title": "LAN Auto-Grader API",
     "version": "1.0.0",
-    "description": "API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer <access_token>. Đổi token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test. Rejudge mới đồng bộ test/tăng version, chưa xếp hàng chấm thật. Nộp bài đã hoạt động (bài nằm ở trạng thái queued tới khi có worker chấm); WebSocket chưa có."
+    "description": "API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer <access_token>. Đổi token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test. Bài nộp được worker chấm thật (g++ C++17 trong sandbox); kết quả dạng passed/total + verdict, dừng ở test sai đầu tiên. Chấm lại problem hoặc từng bài đã hoạt động. WebSocket chưa có."
   },
   "basePath": "/",
   "produces": [
@@ -1687,7 +1687,8 @@
         },
         "consumes": [
           "application/json"
-        ]
+        ],
+        "description": "Cập nhật toàn bộ. Đổi time_limit_ms hoặc memory_limit_mb → version + 1 và chấm lại mọi bài nộp (rejudge_queued, requeued_submissions)."
       },
       "delete": {
         "tags": [
@@ -1851,7 +1852,7 @@
             }
           }
         },
-        "description": "Tạo các cặp N.in/N.out trong data/problems/<id>/tests trên host trước. API quét thư mục, lưu đường dẫn và tăng version. rejudge_queued hiện trả true nhưng requeueProblem vẫn là stub; không coi đây là xác nhận chấm thật."
+        "description": "Quét thư mục test trên server (N.in/N.out), thay test_cases, tăng version, và tạo run + job mới cho MỌI bài nộp của problem ở mọi phiên (run cũ chuyển obsolete). Response có requeued_submissions."
       }
     },
     "/api/v1/sessions/{id}/problems/{pid}/submissions": {
@@ -2205,6 +2206,65 @@
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/{id}/rejudge": {
+      "post": {
+        "tags": [
+          "Nộp bài (GV)"
+        ],
+        "summary": "Chấm lại thủ công một bài nộp",
+        "operationId": "post__api_v1_submissions_id_rejudge",
+        "description": "Run hiện hành (và job) chuyển obsolete, tạo run + job mới ở version hiện tại của problem; các bài khác không đổi. Trả 202 với kết quả đang chờ chấm.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "ID thực tế trả về từ API, không mặc định là 1."
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Thiếu/sai/hết hạn token hoặc thông tin đăng nhập",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Không đủ quyền",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Xung đột trạng thái hoặc dữ liệu",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "202": {
+            "description": "Đã xếp hàng chấm lại",
+            "schema": {
+              "$ref": "#/definitions/Submission"
             }
           }
         }

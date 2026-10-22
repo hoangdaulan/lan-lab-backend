@@ -27,6 +27,10 @@ type Repository interface {
 	ListTestResults(ctx context.Context, runID int64) ([]TestResult, error)
 	// SessionOwner returns the teacher owning the session's exam.
 	SessionOwner(ctx context.Context, sessionID int64) (int64, error)
+	// Rejudge locks problem (SHARE) -> the submission's runs -> their jobs,
+	// marks every non-obsolete run and its job obsolete, and creates a queued
+	// run + job at the current problem version (BACKEND_CONTEXT.md §19).
+	Rejudge(ctx context.Context, id int64) (Submission, error)
 }
 
 type Service struct {
@@ -170,4 +174,13 @@ func (s *Service) TestResults(ctx context.Context, teacherID, id int64) (Submiss
 	}
 	results, err := s.repo.ListTestResults(ctx, sub.Result.RunID)
 	return sub, results, err
+}
+
+// Rejudge queues one submission again at the current problem version; the
+// previous result stops being current (teachers only, owner of the exam).
+func (s *Service) Rejudge(ctx context.Context, teacherID, id int64) (Submission, error) {
+	if _, err := s.Get(ctx, Viewer{ID: teacherID, IsTeacher: true}, id); err != nil {
+		return Submission{}, err
+	}
+	return s.repo.Rejudge(ctx, id)
 }

@@ -32,12 +32,12 @@ test:
 	go vet ./...
 	go test ./...
 
-# Queue tests against the dev PostgreSQL (127.0.0.1:5433); each test creates
+# Queue/requeue tests against the dev PostgreSQL (127.0.0.1:5433); each test creates
 # and drops its own database.
 test-integration:
 	set -a && . ./.env && set +a && \
 	TEST_DATABASE_URL="postgres://$$POSTGRES_USER:$$POSTGRES_PASSWORD@127.0.0.1:5433/$$POSTGRES_DB?sslmode=disable" \
-	go test -race -count=1 -tags=integration ./internal/judge/
+	go test -race -count=1 -tags=integration ./internal/judge/ ./internal/problem/
 
 # Sandbox tests with real g++ and real limits; they need the worker
 # container (root + its capabilities), so the test binary runs there.

@@ -200,3 +200,57 @@ func (r *pgRepository) SessionOwner(ctx context.Context, sessionID int64) (int64
 	}
 	return owner, err
 }
+
+func (r *pgRepository) Rejudge(ctx context.Context, id int64) (Submission, error) {
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var problemID int64
+		err := tx.QueryRow(ctx, `SELECT problem_id FROM submissions WHERE id = $1`, id).Scan(&problemID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.NotFound("submission")
+		}
+		if err != nil {
+			return err
+		}
+		// Lock order problem -> judge_run -> judge_job (§10).
+		var version int
+		if err := tx.QueryRow(ctx, `SELECT version FROM problems WHERE id = $1 FOR SHARE`, problemID).
+			Scan(&version); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`SELECT id FROM judge_runs WHERE submission_id = $1 AND status <> 'obsolete' ORDER BY id FOR UPDATE`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`SELECT j.id FROM judge_jobs j JOIN judge_runs r ON r.id = j.judge_run_id
+			 WHERE r.submission_id = $1 AND j.status <> 'obsolete' ORDER BY j.id FOR UPDATE OF j`, id); err != nil {
+			return err
+		}
+		// A worker still judging the old run loses its lease here; its
+		// result is dropped when it tries to write.
+		if _, err := tx.Exec(ctx,
+			`UPDATE judge_jobs j SET status = 'obsolete', worker_id = NULL, lease_token = NULL,
+			   lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+			 FROM judge_runs r WHERE r.id = j.judge_run_id AND r.submission_id = $1
+			   AND j.status IN ('queued', 'running')`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE judge_runs SET status = 'obsolete', verdict = NULL
+			 WHERE submission_id = $1 AND status <> 'obsolete'`, id); err != nil {
+			return err
+		}
+		var runID int64
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO judge_runs (submission_id, problem_version) VALUES ($1, $2) RETURNING id`,
+			id, version).Scan(&runID); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID)
+		return err
+	})
+	if err != nil {
+		return Submission{}, err
+	}
+	return r.Get(ctx, id)
+}

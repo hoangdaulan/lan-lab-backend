@@ -134,12 +134,16 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, bumped, err := h.svc.Update(r.Context(), teacherID(r), id, req.input())
+	res, err := h.svc.Update(r.Context(), teacherID(r), id, req.input())
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"problem": toResponse(p), "rejudge_queued": bumped})
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"problem":              toResponse(res.Problem),
+		"rejudge_queued":       res.Bumped,
+		"requeued_submissions": res.Requeued,
+	})
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +197,7 @@ func (h *Handler) rejudge(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	p, tests, err := h.svc.Rejudge(r.Context(), teacherID(r), id)
+	p, tests, requeued, err := h.svc.Rejudge(r.Context(), teacherID(r), id)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
@@ -204,9 +208,10 @@ func (h *Handler) rejudge(w http.ResponseWriter, r *http.Request) {
 			InputSize: t.InputSize, OutputSize: t.OutputSize})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"problem":        toResponse(p),
-		"tests":          items,
-		"rejudge_queued": true,
+		"problem":              toResponse(p),
+		"tests":                items,
+		"rejudge_queued":       true,
+		"requeued_submissions": requeued,
 	})
 }
 

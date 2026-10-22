@@ -23,11 +23,11 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 3 | Auth (JWT, refresh token) | ✅ xong |
 | 4 | Quản lý sinh viên | ✅ xong |
 | 5 | Đề, phiên, tham gia | ✅ xong |
-| 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong (xếp hàng chấm lại ở phase 10) |
+| 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong |
 | 7 | Nộp bài | ✅ xong |
 | 8 | Hàng đợi chấm bền vững | ✅ xong (chờ sandbox để chấm thật) |
 | 9 | Sandbox chấm C++17 | ✅ xong |
-| 10 | Chấm lại khi đổi version + chấm lại thủ công | chưa làm |
+| 10 | Chấm lại khi đổi version + chấm lại thủ công | ✅ xong |
 | 11 | WebSocket trạng thái chấm | chưa làm |
 | 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | chưa làm |
 | 13 | Chống gian lận | ❌ không làm (Đã chốt 22/10/2026) |
@@ -238,7 +238,7 @@ scripts/smoke.sh exams
 - [x] Sửa chữ không tăng version; đổi limit tăng version — 22/10: `scripts/smoke.sh problems` 17/17
 - [x] SV xem đề: chưa join 403, trước giờ 403, problem khác đề 404, sau khi join 200 — 22/10: `scripts/smoke.sh problems` 17/17
 - [x] Xóa problem chưa có bài nộp → 204, file test giữ nguyên — 22/10: 204, GET sau đó 404, thư mục `./data/problems/<id>` vẫn còn
-- [ ] Phần tạo lại run/job khi tăng version: chuyển sang phase 10 (hiện là stub `requeueProblem`; API vẫn trả `rejudge_queued: true`)
+- [x] Phần tạo lại run/job khi tăng version — làm ở phase 10 (`requeueProblem`)
 
 **Kiểm tra cuối phase**
 ```bash
@@ -357,16 +357,19 @@ scripts/smoke.sh judge
 - FE/REST hiển thị "đang chấm lại", không coi kết quả cũ là hiện hành.
 
 **Checklist**
-- [ ] Chấm lại problem có N bài → N run mới version mới, run cũ `obsolete`
-- [ ] Worker đang chấm version cũ → kết quả bị loại
-- [ ] AC tính lại theo version mới; AC cũ mất nếu bài không còn AC
-- [ ] Chấm lại thủ công 1 bài → chỉ bài đó được chấm lại
-- [ ] Test đồng thời: chấm lại problem trong lúc worker claim job (không deadlock)
+- [x] Unique index một phần thay `UNIQUE (submission_id, problem_version)` — 22/10: migration `00001` + `schema-design.sql` (DDL vẫn khớp), DB dev `ALTER` tại chỗ; 14 index bổ sung
+- [x] Swagger + `docs/api-v1.md` đồng bộ — 22/10: thêm `POST /submissions/{id}/rejudge` (tổng 38), mô tả `requeued_submissions`
+- [x] Chấm lại problem có N bài → N run mới version mới, run cũ `obsolete` — 22/10: `make test-integration` `TestLimitChangeRequeuesEverySubmission` (5 bài ở 2 phiên → 5 run+job `queued` v2, 5 run v1 `obsolete`), `TestReplaceTestsRequeues`; API trả `requeued_submissions`
+- [x] Worker đang chấm version cũ → kết quả bị loại — 22/10: job đang chạy bị đánh `obsolete` khi requeue → `Complete` trả `ErrLeaseLost`, không ghi gì
+- [x] AC tính lại theo version mới; AC cũ mất nếu bài không còn AC — 22/10: `scripts/smoke.sh rejudge` 10/10 (worker chấm thật): sửa `2.out` trên server + bấm chấm lại → `2/2 AC@v2` thành `1/2 WA@v3`; sửa lại → `2/2 AC@v4`; hạ time limit 100 ms → bài chậm `0/2 TLE@v5`, bài nhanh vẫn AC. Trong lúc chờ, kết quả hiện hành là run version mới (không hiện AC cũ)
+- [x] Chấm lại thủ công 1 bài → chỉ bài đó được chấm lại — 22/10: `TestManualRejudgeOnlyThatSubmission` + smoke: run mới cùng version, run cũ `obsolete`, bài khác giữ nguyên `run_id`; chấm lại liên tiếp vẫn chỉ 1 run hiện hành; SV gọi → 403
+- [x] Test đồng thời: chấm lại problem trong lúc worker claim job (không deadlock) — 22/10: `TestNoDeadlockRequeueVsWorkers`: 4 worker + 186 lần đổi limit/chấm lại thủ công trong 4 s → 0 deadlock, mỗi bài đúng 1 run hiện hành ở version hiện tại, không run không-obsolete ở version cũ
 
 **Kiểm tra cuối phase**
 ```bash
-go test -race -count=1 -tags=integration ./internal/problem/ ./internal/judge/
+make test-integration
 scripts/smoke.sh rejudge
+scripts/smoke.sh all   # 22/10: 111/111
 ```
 
 ---

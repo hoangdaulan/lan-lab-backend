@@ -1,25 +1,14 @@
 //go:build integration
 
-// Integration tests for the durable queue against a real PostgreSQL.
-//
-//	TEST_DATABASE_URL=postgres://user:pass@127.0.0.1:5433/judge?sslmode=disable \
-//	  go test -race -count=1 -tags=integration ./internal/judge/
-//
-// Each test creates its own database from the embedded migrations and drops
-// it afterwards.
+// Integration tests for the durable queue against a real PostgreSQL
+// (`make test-integration`); each test gets its own database (internal/testdb).
 package judge
 
 import (
 	"context"
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,10 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 
-	"github.com/hoangdaulan/lan-lab-backend/migrations"
+	"github.com/hoangdaulan/lan-lab-backend/internal/testdb"
 )
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -39,90 +26,10 @@ var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 // fastRetry keeps the production attempt count but no waiting.
 var fastRetry = RetryPolicy{MaxAttempts: 3}
 
-func newTestDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	admin := os.Getenv("TEST_DATABASE_URL")
-	if admin == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	var b [4]byte
-	_, _ = rand.Read(b[:])
-	name := "judge_it_" + hex.EncodeToString(b[:])
+func newTestDB(t *testing.T) *pgxpool.Pool { return testdb.New(t) }
 
-	adminConn, err := pgx.Connect(ctx, admin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := adminConn.Exec(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = adminConn.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-		adminConn.Close(context.Background())
-	})
-
-	u, _ := url.Parse(admin)
-	u.Path = "/" + name
-	dbURL := u.String()
-
-	sqlDB, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	goose.SetBaseFS(migrations.FS)
-	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatal(err)
-	}
-	sqlDB.Close()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
-
-// fixture creates one exam/session/problem with `tests` test cases and
-// `n` submissions, each with a queued run + job. Returns the problem id.
 func fixture(t *testing.T, pool *pgxpool.Pool, tests, n int) int64 {
-	t.Helper()
-	ctx := context.Background()
-	var teacherID, examID, problemID, sessionID int64
-	must := func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	must(pool.QueryRow(ctx, `INSERT INTO users (code, fullname, role, password_hash) VALUES ('GV','T','teacher','x') RETURNING id`).Scan(&teacherID))
-	must(pool.QueryRow(ctx, `INSERT INTO exams (teacher_id, title) VALUES ($1,'E') RETURNING id`, teacherID).Scan(&examID))
-	must(pool.QueryRow(ctx, `INSERT INTO problems (exam_id, code, title, time_limit_ms, memory_limit_mb) VALUES ($1,'A','P',1000,256) RETURNING id`, examID).Scan(&problemID))
-	for i := 1; i <= tests; i++ {
-		_, err := pool.Exec(ctx, `INSERT INTO test_cases (problem_id, input, output) VALUES ($1, $2, $3)`,
-			problemID, fmt.Sprintf("problems/x/tests/%d.in", i), fmt.Sprintf("problems/x/tests/%d.out", i))
-		must(err)
-	}
-	must(pool.QueryRow(ctx, `INSERT INTO exam_sessions (exam_id, name, starts_at, ends_at)
-		VALUES ($1,'S', now() - interval '1 hour', now() + interval '1 hour') RETURNING id`, examID).Scan(&sessionID))
-	for i := 0; i < n; i++ {
-		var studentID, partID, subID, runID int64
-		must(pool.QueryRow(ctx, `INSERT INTO users (code, fullname, role, password_hash) VALUES ($1,'S','student','x') RETURNING id`,
-			fmt.Sprintf("SV%03d", i)).Scan(&studentID))
-		must(pool.QueryRow(ctx, `INSERT INTO exam_participants (exam_session_id, student_id) VALUES ($1,$2) RETURNING id`,
-			sessionID, studentID).Scan(&partID))
-		must(pool.QueryRow(ctx, `INSERT INTO submissions (exam_participant_id, problem_id, source_path, received_at)
-			VALUES ($1,$2,'submissions/x.cpp', now()) RETURNING id`, partID, problemID).Scan(&subID))
-		must(pool.QueryRow(ctx, `INSERT INTO judge_runs (submission_id, problem_version) VALUES ($1, 1) RETURNING id`, subID).Scan(&runID))
-		_, err := pool.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID)
-		must(err)
-	}
-	return problemID
+	return testdb.NewFixture(t, pool, tests, n).ProblemID
 }
 
 // acJudger returns AC for every test, counting calls per run.
@@ -156,12 +63,7 @@ func acOutcome(job Job) Outcome {
 }
 
 func count(t *testing.T, pool *pgxpool.Pool, q string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := pool.QueryRow(context.Background(), q, args...).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
+	return testdb.Count(t, pool, q, args...)
 }
 
 func TestTwoWorkersJudgeEachJobExactlyOnce(t *testing.T) {

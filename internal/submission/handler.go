@@ -32,6 +32,7 @@ func (h *Handler) RegisterStudent(r chi.Router) {
 // RegisterTeacher adds teacher-only routes.
 func (h *Handler) RegisterTeacher(r chi.Router) {
 	r.Get("/submissions/{id}/tests", h.tests)
+	r.Post("/submissions/{id}/rejudge", h.rejudge)
 }
 
 // RegisterShared adds routes for both roles; the service filters by owner.
@@ -259,4 +260,19 @@ func (h *Handler) tests(w http.ResponseWriter, r *http.Request) {
 		items = append(items, testResultResponse(t))
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"submission": toResponse(sub, true, true), "items": items})
+}
+
+func (h *Handler) rejudge(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.IDParam(r, "id")
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	teacher, _ := auth.PrincipalFrom(r.Context())
+	sub, err := h.svc.Rejudge(r.Context(), teacher.ID, id)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, toResponse(sub, true, true))
 }

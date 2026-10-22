@@ -22,15 +22,16 @@ type Repository interface {
 	ListByExam(ctx context.Context, examID int64) ([]Problem, error)
 	Get(ctx context.Context, id int64) (Problem, error)
 	// Update saves in; if time/memory limits differ from the locked row it
-	// bumps version once and requeues judging in the same transaction.
-	Update(ctx context.Context, id int64, in Input) (p Problem, versionBumped bool, err error)
+	// bumps version once and requeues every submission in the same
+	// transaction (requeued = number of submissions).
+	Update(ctx context.Context, id int64, in Input) (p Problem, requeued int, versionBumped bool, err error)
 	// Delete removes the problem and its test rows, or returns
 	// apperr.ErrConflict if it has submissions.
 	Delete(ctx context.Context, id int64) error
 	ListTests(ctx context.Context, problemID int64) ([]TestCase, error)
 	// ReplaceTests swaps test_cases for tests, bumps version once and
 	// requeues judging of every submission of the problem, in one transaction.
-	ReplaceTests(ctx context.Context, problemID int64, tests []TestFile) (Problem, error)
+	ReplaceTests(ctx context.Context, problemID int64, tests []TestFile) (p Problem, requeued int, err error)
 
 	SessionWindow(ctx context.Context, sessionID int64) (SessionWindow, error)
 	IsParticipant(ctx context.Context, sessionID, studentID int64) (bool, error)
@@ -102,15 +103,23 @@ func (s *Service) List(ctx context.Context, teacherID, examID int64) ([]Problem,
 	return s.repo.ListByExam(ctx, examID)
 }
 
-func (s *Service) Update(ctx context.Context, teacherID, problemID int64, in Input) (Problem, bool, error) {
+// UpdateResult tells the caller whether the edit changed what is judged.
+type UpdateResult struct {
+	Problem  Problem
+	Bumped   bool // time/memory limit changed: version + 1
+	Requeued int  // submissions queued for judging at the new version
+}
+
+func (s *Service) Update(ctx context.Context, teacherID, problemID int64, in Input) (UpdateResult, error) {
 	if _, err := s.Owned(ctx, teacherID, problemID); err != nil {
-		return Problem{}, false, err
+		return UpdateResult{}, err
 	}
 	in, err := in.normalize()
 	if err != nil {
-		return Problem{}, false, err
+		return UpdateResult{}, err
 	}
-	return s.repo.Update(ctx, problemID, in)
+	p, requeued, bumped, err := s.repo.Update(ctx, problemID, in)
+	return UpdateResult{Problem: p, Bumped: bumped, Requeued: requeued}, err
 }
 
 func (s *Service) Delete(ctx context.Context, teacherID, problemID int64) error {
@@ -130,19 +139,19 @@ func (s *Service) ListTests(ctx context.Context, teacherID, problemID int64) ([]
 
 // Rejudge re-reads the test directory, replaces test_cases, bumps the
 // version and requeues every submission of the problem in all sessions.
-func (s *Service) Rejudge(ctx context.Context, teacherID, problemID int64) (Problem, []TestFile, error) {
+func (s *Service) Rejudge(ctx context.Context, teacherID, problemID int64) (Problem, []TestFile, int, error) {
 	if _, err := s.Owned(ctx, teacherID, problemID); err != nil {
-		return Problem{}, nil, err
+		return Problem{}, nil, 0, err
 	}
 	tests, err := ScanTests(s.dataDir, TestDir(problemID))
 	if err != nil {
-		return Problem{}, nil, err
+		return Problem{}, nil, 0, err
 	}
-	p, err := s.repo.ReplaceTests(ctx, problemID, tests)
+	p, requeued, err := s.repo.ReplaceTests(ctx, problemID, tests)
 	if err != nil {
-		return Problem{}, nil, err
+		return Problem{}, nil, 0, err
 	}
-	return p, tests, nil
+	return p, tests, requeued, nil
 }
 
 // ForStudent returns the statement only once the session has started, to a

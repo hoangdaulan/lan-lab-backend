@@ -89,8 +89,8 @@ func lockProblem(ctx context.Context, tx pgx.Tx, id int64) (Problem, error) {
 	return scanProblem(tx.QueryRow(ctx, problemSelect+` WHERE p.id = $1 FOR UPDATE OF p`, id))
 }
 
-func (r *pgRepository) Update(ctx context.Context, id int64, in Input) (Problem, bool, error) {
-	bumped := false
+func (r *pgRepository) Update(ctx context.Context, id int64, in Input) (Problem, int, bool, error) {
+	bumped, requeued := false, 0
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		old, err := lockProblem(ctx, tx, id)
 		if err != nil {
@@ -109,15 +109,15 @@ func (r *pgRepository) Update(ctx context.Context, id int64, in Input) (Problem,
 			return err
 		}
 		if bumped {
-			return requeueProblem(ctx, tx, id, old.Version+1)
+			requeued, err = requeueProblem(ctx, tx, id, old.Version+1)
 		}
-		return nil
+		return err
 	})
 	if err != nil {
-		return Problem{}, false, err
+		return Problem{}, 0, false, err
 	}
 	p, err := r.Get(ctx, id)
-	return p, bumped, err
+	return p, requeued, bumped, err
 }
 
 func (r *pgRepository) Delete(ctx context.Context, id int64) error {
@@ -159,7 +159,8 @@ func (r *pgRepository) ListTests(ctx context.Context, problemID int64) ([]TestCa
 	return out, rows.Err()
 }
 
-func (r *pgRepository) ReplaceTests(ctx context.Context, problemID int64, tests []TestFile) (Problem, error) {
+func (r *pgRepository) ReplaceTests(ctx context.Context, problemID int64, tests []TestFile) (Problem, int, error) {
+	requeued := 0
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		old, err := lockProblem(ctx, tx, problemID)
 		if err != nil {
@@ -182,22 +183,60 @@ func (r *pgRepository) ReplaceTests(ctx context.Context, problemID int64, tests 
 			problemID); err != nil {
 			return err
 		}
-		return requeueProblem(ctx, tx, problemID, old.Version+1)
+		requeued, err = requeueProblem(ctx, tx, problemID, old.Version+1)
+		return err
 	})
 	if err != nil {
-		return Problem{}, err
+		return Problem{}, 0, err
 	}
-	return r.Get(ctx, problemID)
+	p, err := r.Get(ctx, problemID)
+	return p, requeued, err
 }
 
-// requeueProblem must mark the problem's current runs/jobs obsolete and
-// create a queued run + job at newVersion for every submission of the
-// problem, inside the caller's transaction (BACKEND_CONTEXT.md §8, §10).
-//
-// Stub until the submission/judge step: there are no submissions yet, and
-// the queue SQL lands together with the worker that consumes it.
-func requeueProblem(_ context.Context, _ pgx.Tx, _ int64, _ int) error {
-	return nil
+// requeueProblem runs inside the caller's transaction, which already holds
+// the problem row FOR UPDATE and has set problems.version = newVersion
+// (BACKEND_CONTEXT.md §8, §10). It locks the problem's current runs, then
+// their jobs (ids ascending), marks them obsolete — clearing verdicts and
+// leases as the CHECK constraints require; a worker still judging one loses
+// its lease and its result is dropped — and creates a queued run + job at
+// newVersion for every submission of the problem, in every session.
+// It returns the number of submissions requeued.
+func requeueProblem(ctx context.Context, tx pgx.Tx, problemID int64, newVersion int) (int, error) {
+	if _, err := tx.Exec(ctx,
+		`SELECT r.id FROM judge_runs r JOIN submissions s ON s.id = r.submission_id
+		 WHERE s.problem_id = $1 AND r.status <> 'obsolete' ORDER BY r.id FOR UPDATE OF r`, problemID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`SELECT j.id FROM judge_jobs j JOIN judge_runs r ON r.id = j.judge_run_id
+		 JOIN submissions s ON s.id = r.submission_id
+		 WHERE s.problem_id = $1 AND j.status <> 'obsolete' ORDER BY j.id FOR UPDATE OF j`, problemID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE judge_jobs j SET status = 'obsolete', worker_id = NULL, lease_token = NULL,
+		   lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+		 FROM judge_runs r, submissions s
+		 WHERE r.id = j.judge_run_id AND s.id = r.submission_id AND s.problem_id = $1
+		   AND j.status IN ('queued', 'running')`, problemID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE judge_runs r SET status = 'obsolete', verdict = NULL
+		 FROM submissions s
+		 WHERE s.id = r.submission_id AND s.problem_id = $1 AND r.status <> 'obsolete'`, problemID); err != nil {
+		return 0, err
+	}
+	tag, err := tx.Exec(ctx,
+		`WITH runs AS (
+		   INSERT INTO judge_runs (submission_id, problem_version)
+		   SELECT id, $2 FROM submissions WHERE problem_id = $1 ORDER BY id
+		   RETURNING id)
+		 INSERT INTO judge_jobs (judge_run_id) SELECT id FROM runs`, problemID, newVersion)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *pgRepository) SessionWindow(ctx context.Context, sessionID int64) (SessionWindow, error) {
