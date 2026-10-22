@@ -1,0 +1,1518 @@
+swagger: '2.0'
+info:
+  title: LAN Auto-Grader API
+  version: 1.0.0
+  description: API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer
+    <access_token>. Đổi token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test.
+    Rejudge mới đồng bộ test/tăng version, chưa xếp hàng chấm thật. Submission, worker
+    chấm và WebSocket chưa có endpoint hoạt động.
+basePath: /
+produces:
+- application/json
+securityDefinitions:
+  BearerAuth:
+    type: apiKey
+    in: header
+    name: Authorization
+    description: 'Nhập cả tiền tố: Bearer <access_token>. Token giáo viên dùng cho
+      quản lý, token sinh viên dùng join/finish.'
+security:
+- BearerAuth: []
+paths:
+  /healthz:
+    get:
+      tags:
+      - Hệ thống
+      summary: Kiểm tra API và kết nối database
+      operationId: get__healthz
+      parameters: []
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      security: []
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Đăng nhập
+      description: Body chỉ gồm code và password; vai trò (teacher/student) lấy từ
+        tài khoản trong DB và trả về trong user.role + claim role của JWT. Gửi thêm
+        trường role sẽ bị 400.
+      operationId: post__api_v1_auth_login
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/Login'
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Tokens'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+      security: []
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Auth
+      summary: Đổi refresh token lấy cặp token mới
+      operationId: post__api_v1_auth_refresh
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/Refresh'
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Tokens'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+      security: []
+  /api/v1/auth/logout:
+    post:
+      tags:
+      - Auth
+      summary: Đăng xuất, thu hồi refresh token
+      operationId: post__api_v1_auth_logout
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/Refresh'
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+      security: []
+  /api/v1/me:
+    get:
+      tags:
+      - Auth
+      summary: Thông tin tài khoản hiện tại
+      operationId: get__api_v1_me
+      parameters: []
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/User'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/me/password:
+    put:
+      tags:
+      - Auth
+      summary: Đổi mật khẩu, thu hồi mọi refresh token
+      operationId: put__api_v1_me_password
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/Password'
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+  /api/v1/students:
+    get:
+      tags:
+      - Sinh viên (GV)
+      summary: Tìm và liệt kê sinh viên
+      operationId: get__api_v1_students
+      parameters:
+      - name: q
+        in: query
+        type: string
+      - name: limit
+        in: query
+        type: integer
+        default: 50
+      - name: offset
+        in: query
+        type: integer
+        default: 0
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    post:
+      tags:
+      - Sinh viên (GV)
+      summary: Tạo sinh viên; mật khẩu mặc định bằng code
+      operationId: post__api_v1_students
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/StudentInput'
+      responses:
+        '201':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Student'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+  /api/v1/students/import:
+    post:
+      tags:
+      - Sinh viên (GV)
+      summary: Upload CSV sinh viên
+      operationId: post__api_v1_students_import
+      parameters:
+      - name: file
+        in: formData
+        required: true
+        type: file
+        description: 'CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã
+          có sẽ bỏ qua; dữ liệu mẫu: TESTSV001,Nguyễn Văn An.'
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - multipart/form-data
+  /api/v1/students/{id}/reset-password:
+    post:
+      tags:
+      - Sinh viên (GV)
+      summary: Reset mật khẩu về code
+      operationId: post__api_v1_students_id_reset-password
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/exams:
+    get:
+      tags:
+      - Đề và phiên (GV)
+      summary: Danh sách đề
+      operationId: get__api_v1_exams
+      parameters: []
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    post:
+      tags:
+      - Đề và phiên (GV)
+      summary: Tạo đề
+      operationId: post__api_v1_exams
+      parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/ExamInput'
+      responses:
+        '201':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Exam'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+  /api/v1/exams/{id}:
+    get:
+      tags:
+      - Đề và phiên (GV)
+      summary: Chi tiết đề
+      operationId: get__api_v1_exams_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Exam'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    put:
+      tags:
+      - Đề và phiên (GV)
+      summary: Sửa đề
+      operationId: put__api_v1_exams_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/ExamInput'
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Exam'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+    delete:
+      tags:
+      - Đề và phiên (GV)
+      summary: Xóa đề rỗng
+      operationId: delete__api_v1_exams_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/exams/{id}/sessions:
+    get:
+      tags:
+      - Đề và phiên (GV)
+      summary: Các phiên của đề
+      operationId: get__api_v1_exams_id_sessions
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    post:
+      tags:
+      - Đề và phiên (GV)
+      summary: Tạo phiên
+      operationId: post__api_v1_exams_id_sessions
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/SessionInput'
+      responses:
+        '201':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Session'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+  /api/v1/sessions/{id}:
+    put:
+      tags:
+      - Đề và phiên (GV)
+      summary: Sửa phiên
+      operationId: put__api_v1_sessions_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/SessionInput'
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Session'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+    delete:
+      tags:
+      - Đề và phiên (GV)
+      summary: Xóa phiên chưa có bài nộp
+      operationId: delete__api_v1_sessions_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    get:
+      tags:
+      - Phiên (GV/SV)
+      summary: Xem phiên và danh sách problem
+      operationId: get__api_v1_sessions_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/sessions/{id}/participants:
+    get:
+      tags:
+      - Đề và phiên (GV)
+      summary: Danh sách người tham gia
+      operationId: get__api_v1_sessions_id_participants
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/me/sessions:
+    get:
+      tags:
+      - Làm bài (SV)
+      summary: Danh sách phiên và trạng thái tham gia
+      operationId: get__api_v1_me_sessions
+      parameters: []
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/sessions/{id}/join:
+    post:
+      tags:
+      - Làm bài (SV)
+      summary: Tham gia phiên
+      operationId: post__api_v1_sessions_id_join
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Participant'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/sessions/{id}/finish:
+    post:
+      tags:
+      - Làm bài (SV)
+      summary: Kết thúc làm bài
+      operationId: post__api_v1_sessions_id_finish
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Participant'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/sessions/{id}/problems/{pid}:
+    get:
+      tags:
+      - Làm bài (SV)
+      summary: Xem nội dung bài sau khi tham gia
+      operationId: get__api_v1_sessions_id_problems_pid
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: pid
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      description: Code hiện tại vẫn cho xem statement sau finished; đây là điểm đã
+        được nêu trong review.
+  /api/v1/exams/{id}/problems:
+    get:
+      tags:
+      - Problem (GV)
+      summary: Danh sách bài
+      operationId: get__api_v1_exams_id_problems
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    post:
+      tags:
+      - Problem (GV)
+      summary: Tạo bài
+      operationId: post__api_v1_exams_id_problems
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/ProblemInput'
+      responses:
+        '201':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Problem'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+  /api/v1/problems/{id}:
+    get:
+      tags:
+      - Problem (GV)
+      summary: Chi tiết bài
+      operationId: get__api_v1_problems_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Problem'
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+    put:
+      tags:
+      - Problem (GV)
+      summary: Sửa bài
+      operationId: put__api_v1_problems_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: body
+        in: body
+        required: true
+        schema:
+          $ref: '#/definitions/ProblemInput'
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      consumes:
+      - application/json
+    delete:
+      tags:
+      - Problem (GV)
+      summary: Xóa bài chưa có bài nộp
+      operationId: delete__api_v1_problems_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '204':
+          description: Thành công (không có body)
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/problems/{id}/tests:
+    get:
+      tags:
+      - Problem (GV)
+      summary: Danh sách đường dẫn test đã lưu
+      operationId: get__api_v1_problems_id_tests
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/problems/{id}/rejudge:
+    post:
+      tags:
+      - Problem (GV)
+      summary: Đồng bộ test / tăng version (chưa chấm thật)
+      operationId: post__api_v1_problems_id_rejudge
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '200':
+          description: Thành công
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+      description: Tạo các cặp N.in/N.out trong data/problems/<id>/tests trên host
+        trước. API quét thư mục, lưu đường dẫn và tăng version. rejudge_queued hiện
+        trả true nhưng requeueProblem vẫn là stub; không coi đây là xác nhận chấm
+        thật.
+definitions:
+  Error:
+    type: object
+    properties:
+      error:
+        type: string
+        example: Thông báo lỗi
+  Login:
+    type: object
+    properties:
+      code:
+        type: string
+        example: GV01
+      password:
+        type: string
+        example: Thay bằng mật khẩu đã seed
+    required:
+    - code
+    - password
+  Refresh:
+    type: object
+    properties:
+      refresh_token:
+        type: string
+        example: Dán refresh_token mới nhất từ login/refresh
+    required:
+    - refresh_token
+  Password:
+    type: object
+    properties:
+      current_password:
+        type: string
+        example: TESTSV001
+      new_password:
+        type: string
+        example: TestPass2026!
+        maxLength: 72
+    required:
+    - current_password
+    - new_password
+  StudentInput:
+    type: object
+    properties:
+      code:
+        type: string
+        example: TESTSV001
+      fullname:
+        type: string
+        example: Nguyễn Văn An
+    required:
+    - code
+    - fullname
+  ExamInput:
+    type: object
+    properties:
+      title:
+        type: string
+        example: Đề test API
+      description:
+        type: string
+        example: Kiểm tra luồng làm bài
+    required:
+    - title
+  SessionInput:
+    type: object
+    properties:
+      name:
+        type: string
+        example: Phiên test
+      starts_at:
+        type: string
+        example: '2026-10-22T00:00:00+07:00'
+        format: date-time
+      ends_at:
+        type: string
+        example: '2026-10-23T00:00:00+07:00'
+        format: date-time
+    required:
+    - name
+    - starts_at
+    - ends_at
+  ProblemInput:
+    type: object
+    properties:
+      code:
+        type: string
+        example: A
+      title:
+        type: string
+        example: Tổng hai số
+      statement:
+        type: string
+        example: Nhập hai số nguyên a, b. In tổng a + b.
+      time_limit_ms:
+        type: integer
+        minimum: 1
+        maximum: 10000
+        example: 1000
+      memory_limit_mb:
+        type: integer
+        minimum: 1
+        maximum: 1024
+        example: 256
+    required:
+    - code
+    - title
+    - time_limit_ms
+    - memory_limit_mb
+  User:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      role:
+        type: string
+      code:
+        type: string
+      fullname:
+        type: string
+  Tokens:
+    type: object
+    properties:
+      access_token:
+        type: string
+      access_expires_at:
+        type: string
+        format: date-time
+      refresh_token:
+        type: string
+      refresh_expires_at:
+        type: string
+        format: date-time
+      user:
+        $ref: '#/definitions/User'
+  Participant:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      session_id:
+        type: integer
+        format: int64
+        example: 1
+      student_id:
+        type: integer
+        format: int64
+        example: 1
+      student_code:
+        type: string
+      student_fullname:
+        type: string
+      status:
+        type: string
+        enum:
+        - in_progress
+        - finished
+      joined_at:
+        type: string
+        format: date-time
+      finished_at:
+        type: string
+        format: date-time
+        x-nullable: true
+  Exam:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      title:
+        type: string
+      description:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+      updated_at:
+        type: string
+        format: date-time
+  Session:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      exam_id:
+        type: integer
+        format: int64
+        example: 1
+      exam_title:
+        type: string
+      name:
+        type: string
+      starts_at:
+        type: string
+        format: date-time
+      ends_at:
+        type: string
+        format: date-time
+      state:
+        type: string
+        enum:
+        - upcoming
+        - running
+        - ended
+  Student:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      code:
+        type: string
+      fullname:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+      updated_at:
+        type: string
+        format: date-time
+  Problem:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      exam_id:
+        type: integer
+        format: int64
+        example: 1
+      code:
+        type: string
+      title:
+        type: string
+      statement:
+        type: string
+      time_limit_ms:
+        type: integer
+        format: int64
+        example: 1000
+      memory_limit_mb:
+        type: integer
+        format: int64
+        example: 256
+      version:
+        type: integer
+        format: int64
+        example: 1
+      test_dir:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+      updated_at:
+        type: string
+        format: date-time
