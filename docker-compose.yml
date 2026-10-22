@@ -59,18 +59,22 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       DATA_DIR: /data
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
-    user: "${APP_UID:-10001}:${APP_GID:-10001}"
+    # Root inside the container with only the capabilities the sandbox needs
+    # (BACKEND_CONTEXT.md §19): SYS_ADMIN for a new network namespace per
+    # program, SETUID/SETGID to run it as runner uid 20000+slot, CHOWN/FOWNER
+    # for its scratch directory, DAC_OVERRIDE to read ./data (chmod 0750 at
+    # start so runner uids cannot), KILL to stop programs. Student programs
+    # get none of these: no capabilities, no_new_privs, setrlimit limits.
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL]
+    security_opt:
+      - no-new-privileges:true
     volumes:
       # Same directory as api: api writes sources, worker reads sources/tests.
       - ./data:/data
     # Only the internal `db` network: the worker can reach PostgreSQL but has
-    # no route to the LAN/Internet.
-    #
-    # To be implemented in the judge step: submitted programs must additionally
-    # run with networking disabled (separate network namespace / no sockets),
-    # a wall-clock + CPU timeout, and memory/process/output limits via
-    # setrlimit, as an unprivileged user, never inside the worker's own
-    # privileges. This container boundary alone is NOT the sandbox.
+    # no route to the LAN/Internet; student programs have no network at all.
     networks: [db]
 
 networks:

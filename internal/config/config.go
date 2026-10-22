@@ -43,6 +43,10 @@ type Config struct {
 	// WorkerLease is how long a claimed job stays reserved without a
 	// heartbeat (BACKEND_CONTEXT.md §19: 60 s).
 	WorkerLease time.Duration
+
+	// JudgeWorkDir holds per-job scratch directories (compiled binaries,
+	// program output); it must not be under DATA_DIR.
+	JudgeWorkDir string
 }
 
 // Load reads every setting; callers validate what their binary needs with
@@ -54,6 +58,8 @@ func Load() (Config, error) {
 		JWTSecret:   os.Getenv("JWT_SECRET"),
 		DataDir:     getenv("DATA_DIR", "/data"),
 		WorkerID:    os.Getenv("WORKER_ID"),
+
+		JudgeWorkDir: getenv("JUDGE_WORK_DIR", "/var/judge"),
 	}
 
 	var err error
