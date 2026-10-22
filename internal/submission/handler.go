@@ -154,6 +154,10 @@ func utcPtr(t *time.Time) *time.Time {
 	return &u
 }
 
+// ToResponse renders a submission as in REST responses (also used for
+// WebSocket run.updated): no compile output, no system error.
+func ToResponse(s Submission) any { return toResponse(s, false) }
+
 // toResponse renders a submission. detail adds compile output; system
 // errors are only shown to teachers (BACKEND_CONTEXT.md §11).
 func toResponse(s Submission, detail bool, teacher ...bool) submissionResponse {

@@ -35,6 +35,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       HTTP_ADDR: ":8080"
       DATA_DIR: /data
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
     # Runs as the owner of ./data so files the teacher edits on the host stay
     # readable/writable by the containers.
     user: "${APP_UID:-10001}:${APP_GID:-10001}"

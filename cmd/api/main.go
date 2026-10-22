@@ -14,11 +14,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/hoangdaulan/lan-lab-backend/internal/auth"
+	"github.com/hoangdaulan/lan-lab-backend/internal/board"
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
 	"github.com/hoangdaulan/lan-lab-backend/internal/exam"
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
 	"github.com/hoangdaulan/lan-lab-backend/internal/problem"
+	"github.com/hoangdaulan/lan-lab-backend/internal/realtime"
 	"github.com/hoangdaulan/lan-lab-backend/internal/student"
 	"github.com/hoangdaulan/lan-lab-backend/internal/submission"
 )
@@ -57,17 +59,31 @@ func run(log *slog.Logger) error {
 	studentHandler := student.NewHandler(student.NewService(student.NewRepository(pool), authSvc), log)
 	examHandler := exam.NewHandler(exam.NewService(exam.NewRepository(pool), nil), log)
 	problemHandler := problem.NewHandler(problem.NewService(problem.NewRepository(pool), cfg.DataDir, nil, log), log)
-	submissionHandler := submission.NewHandler(submission.NewService(submission.NewRepository(pool),
+	submissionRepo := submission.NewRepository(pool)
+	submissionHandler := submission.NewHandler(submission.NewService(submissionRepo,
 		submission.NewStorage(cfg.DataDir), nil, log), log)
+
+	// Realtime: LISTEN judge_events -> hub -> WebSocket clients
+	// (BACKEND_CONTEXT.md §19, phase 11).
+	boardSvc := board.NewService(board.NewRepository(pool), board.NewAnnouncements())
+	hub := realtime.NewHub(realtime.Sources{Submissions: submissionRepo, Board: boardSvc}, log)
+	boardSvc.SetBroadcaster(hub)
+	boardHandler := board.NewHandler(boardSvc, log)
+	wsHandler := realtime.NewHandler(hub, authSvc, cfg.WSAllowedOrigins, log)
+	go realtime.NewListener(cfg.DatabaseURL, hub, log).Run(ctx)
+	go hub.RunSummaries(ctx)
 
 	router := httpx.NewRouter(pool)
 	router.Route("/api/v1", func(r chi.Router) {
 		authHandler.Register(r)
+		// Authenticated by its first message, not by the Bearer middleware.
+		r.Get("/ws", wsHandler.ServeHTTP)
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Authenticate(authSvc))
 			examHandler.RegisterShared(r)
 			submissionHandler.RegisterShared(r)
+			boardHandler.RegisterShared(r)
 
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireRole(auth.RoleTeacher))
@@ -75,12 +91,14 @@ func run(log *slog.Logger) error {
 				examHandler.RegisterTeacher(r)
 				problemHandler.RegisterTeacher(r)
 				submissionHandler.RegisterTeacher(r)
+				boardHandler.RegisterTeacher(r)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireRole(auth.RoleStudent))
 				examHandler.RegisterStudent(r)
 				problemHandler.RegisterStudent(r)
 				submissionHandler.RegisterStudent(r)
+				boardHandler.RegisterStudent(r)
 			})
 		})
 	})

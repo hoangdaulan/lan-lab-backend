@@ -28,8 +28,8 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 8 | Hàng đợi chấm bền vững | ✅ xong (chờ sandbox để chấm thật) |
 | 9 | Sandbox chấm C++17 | ✅ xong |
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | ✅ xong |
-| 11 | WebSocket trạng thái chấm | chưa làm |
-| 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | chưa làm |
+| 11 | WebSocket: kết quả chấm, bảng GV, thông báo | ✅ xong |
+| 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | một phần (tổng hợp xong; còn CSV, `/admin/queue`) |
 | 13 | Chống gian lận | ❌ không làm (Đã chốt 22/10/2026) |
 | 14 | Gia cố, kiểm thử tải ~50 SV, quan sát | chưa làm |
 | 15 | Tài liệu, báo cáo, kịch bản demo | chưa làm |
@@ -374,27 +374,42 @@ scripts/smoke.sh all   # 22/10: 111/111
 
 ---
 
-## Phase 11 — WebSocket trạng thái chấm
+## Phase 11 — WebSocket: kết quả chấm, bảng GV trực tiếp, thông báo
 
-**Mục tiêu:** client nhận cập nhật trạng thái chấm theo thời gian thực; REST vẫn là nguồn chính.
+**Mục tiêu:** client nhận cập nhật theo thời gian thực; REST vẫn là nguồn chính.
+
+**Phạm vi (Đã chốt 22/10/2026)** — tối thiểu + 3 tính năng:
+- **Tối thiểu:** `GET /api/v1/ws`; kiểm tra `Origin`; message đầu `{"type":"auth","data":{"token":…}}` trong vài giây, sai thì đóng; ping/pong; `subscribe` theo phiên; `run.updated` qua PostgreSQL `NOTIFY/LISTEN`; nối lại + REST bù trạng thái.
+- **(3) Bảng GV trực tiếp:** `summary.updated` đẩy `x/N AC` theo SV × problem, SV đang online (từ kết nối WS), độ dài hàng đợi; làm luôn REST tổng hợp của phase 12 (`/sessions/{id}/summary`, `/summary/me`) để có dữ liệu ban đầu.
+- **(4) Thông báo của GV** tới cả phiên → SV nhận `announcement`.
+- **(5) Chấm lại hiện ngay:** GV chấm lại (problem hoặc 1 bài) → mọi SV bị ảnh hưởng nhận `run.updated` "đang chờ" rồi kết quả mới (fan-out).
+- **Không làm:** tiến độ từng test (`run.progress`), hẹn giờ phiên (`session.started/ended`).
 
 **Công việc**
-- `GET /api/v1/ws`: kiểm tra `Origin`; message đầu tiên `{"type":"auth","data":{"token":"<access JWT>"}}` trong N giây, sai thì đóng.
-- Server push `{"type":"run.updated","data":{submission_id, run_id, status, verdict, passed_tests, total_tests}}`: SV chỉ nhận bài của mình, GV nhận theo phiên đang xem (`{"type":"subscribe","data":{"session_id":…}}`).
-- Nguồn sự kiện: worker ghi DB rồi `NOTIFY`; API `LISTEN` và phát cho client, polling dự phòng 5 s (Đã chốt 22/10/2026, câu 7).
-- Ping/pong, giới hạn kích thước message, đóng khi token hết hạn.
+- `NOTIFY` trong cùng transaction ở mọi chỗ đổi trạng thái run (nhận bài, worker nhận, có kết quả, retry/lỗi hạ tầng, chấm lại); API giữ một kết nối `LISTEN`, nạp lại bài nộp rồi phát cho đúng người; mất kết nối `LISTEN` → nối lại và gửi `resync` cho client.
+- Hub kết nối: SV nhận bài của mình; GV nhận bài + bảng của phiên mình sở hữu đang subscribe; client chậm bị ngắt thay vì làm nghẽn hub.
+- Thông báo: `POST /sessions/{id}/announcements` (REST, GV) rồi phát qua WS; `GET` để client mới vào / nối lại xem lại.
+- Giới hạn kích thước message, đóng khi token hết hạn (client gửi `auth` mới để gia hạn).
 
 **Checklist**
-- [ ] Không gửi auth / token sai → đóng kết nối với mã lỗi
-- [ ] Origin lạ → từ chối
-- [ ] SV nhận `run.updated` của bài mình, không nhận bài SV khác
-- [ ] Mất kết nối rồi nối lại → REST trả trạng thái đúng
-- [ ] 50 kết nối đồng thời ổn định (đo bộ nhớ/CPU)
+- [x] Không gửi auth / token sai → đóng kết nối với mã lỗi — 22/10: `make test-integration` (`internal/realtime`, client WebSocket thật + PostgreSQL thật) `TestAuthenticationAndOrigin`: im lặng quá hạn / token sai / `subscribe` trước `auth` → đóng `4001`; token hết hạn → `4001`, gửi `auth` mới trước hạn thì giữ kết nối, token của người khác bị từ chối (`TestTokenExpiryAndRefresh`). **Sửa trong lúc test:** hết hạn auth trước đây đóng kết nối không có mã (do huỷ context đọc) → đổi sang hẹn giờ đóng `4001`
+- [x] Origin lạ → từ chối — 22/10: test + smoke: `Origin: http://evil.example` → 403; cùng origin → 101
+- [x] SV nhận `run.updated` của bài mình, không nhận bài SV khác — 22/10: `TestResultsBoardAndPrivacy` + smoke: SV1 nhận `queued@v2 → judging@v2 → completed@v2 (AC)`; SV2 nhận 0 `run.updated`; unit test định tuyến (`TestRunUpdatedRouting`)
+- [x] GV subscribe phiên của mình nhận `run.updated` + `summary.updated`; phiên của GV khác → từ chối — 22/10: smoke: GV nhận 6 `run.updated` + bảng (1 AC, 2 online); GV khác subscribe → `error`
+- [x] Bảng tổng hợp (REST + `summary.updated`) đúng `x/N AC`, SV online, độ dài hàng đợi — 22/10: `internal/board` `TestSummaryStates` (AC giữ nguyên khi bài sau WA, `system_error` = attempted, pending, none, hàng đợi, khớp SQL đếm độc lập); smoke REST: `online_count` 2 khi 2 SV mở WS
+- [x] Thông báo GV tới đúng các client của phiên — 22/10: unit (SV phiên khác không nhận) + integration + smoke (2 SV nhận, `GET /announcements` trả lại khi nối lại)
+- [x] Chấm lại → SV bị ảnh hưởng nhận "đang chờ" rồi kết quả mới — 22/10: `TestAnnouncementAndRejudgeFanOut` (3 SV nhận `queued@v2`, rồi WA@v2); smoke: đổi limit → `queued@v3 → judging@v3 → completed@v3`
+- [x] Mất kết nối rồi nối lại → REST trả trạng thái đúng; mất `LISTEN` → `resync` — 22/10: `TestListenerReconnectSendsResync`: `pg_terminate_backend` kết nối LISTEN → client nhận `resync`, sự kiện chạy lại sau khi listener tự nối lại; REST (`/submissions/{id}`, `/summary`, `/announcements`) trả trạng thái hiện tại (smoke)
+- [x] 50 kết nối đồng thời: mọi client nhận sự kiện, đo độ trễ phát tán — 22/10: `TestFiftyClientsFanOut` (máy dev, 1 API): thông báo tới 50 client p50 0,68 ms / p95 0,73 ms / max 0,75 ms; kết quả chấm commit → client (NOTIFY → LISTEN → nạp DB → đẩy) p50 2,6 ms / p95 3,4 ms / max 10,7 ms. Đo CPU/RAM với tải thật: phase 14
+
+- [x] Swagger + `docs/api-v1.md` — 22/10: Swagger 42 thao tác (thêm summary, summary/me, announcements GET/POST); `/ws` mô tả trong `docs/api-v1.md` ("Chi tiết WebSocket")
 
 **Kiểm tra cuối phase**
 ```bash
-go test -race -count=1 ./internal/realtime/
-scripts/smoke.sh ws
+go test -race -count=1 ./internal/realtime/ ./internal/board/
+make test-integration
+scripts/smoke.sh ws     # 22/10: 11/11
+scripts/smoke.sh all    # 22/10: 122/122
 ```
 
 ---
@@ -409,9 +424,9 @@ scripts/smoke.sh ws
 - `GET /admin/queue` (T): số job theo trạng thái, worker đang chạy, thời gian chờ trung bình.
 
 **Checklist**
-- [ ] Bảng tổng hợp khớp truy vấn SQL độc lập trên dữ liệu mẫu
-- [ ] Lần nộp sai/lỗi hạ tầng sau không làm mất AC cùng version
-- [ ] SV không xem được tổng hợp của SV khác
+- [x] Bảng tổng hợp khớp truy vấn SQL độc lập trên dữ liệu mẫu — 22/10: làm cùng phase 11 (`TestSummaryStates`)
+- [x] Lần nộp sai/lỗi hạ tầng sau không làm mất AC cùng version — 22/10: `TestSummaryStates` (AC rồi WA mới hơn → ô vẫn `ac`, `latest` là WA)
+- [x] SV không xem được tổng hợp của SV khác — 22/10: `/summary/me` chỉ một dòng; chưa tham gia → 403; route GV → 403 (role)
 - [ ] CSV mở được bằng Excel (UTF-8 BOM, dấu phẩy, tiếng Việt)
 - [ ] `/admin/queue` số liệu khớp `SELECT status, count(*) FROM judge_jobs`
 

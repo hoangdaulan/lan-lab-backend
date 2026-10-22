@@ -41,6 +41,13 @@ func (s *JWTSigner) Issue(p Principal, now time.Time) (string, time.Time, error)
 }
 
 func (s *JWTSigner) Verify(token string, now time.Time) (Principal, error) {
+	p, _, err := s.VerifyWithExpiry(token, now)
+	return p, err
+}
+
+// VerifyWithExpiry also returns the token's expiry, for long-lived
+// connections (WebSocket) that must end when the token does.
+func (s *JWTSigner) VerifyWithExpiry(token string, now time.Time) (Principal, time.Time, error) {
 	var claims accessClaims
 	_, err := jwt.ParseWithClaims(token, &claims,
 		func(*jwt.Token) (any, error) { return s.secret, nil },
@@ -52,11 +59,11 @@ func (s *JWTSigner) Verify(token string, now time.Time) (Principal, error) {
 		jwt.WithTimeFunc(func() time.Time { return now }),
 	)
 	if err != nil {
-		return Principal{}, ErrInvalidAccessToken
+		return Principal{}, time.Time{}, ErrInvalidAccessToken
 	}
 	id, err := strconv.ParseInt(claims.Subject, 10, 64)
 	if err != nil || id <= 0 || !claims.Role.Valid() {
-		return Principal{}, ErrInvalidAccessToken
+		return Principal{}, time.Time{}, ErrInvalidAccessToken
 	}
-	return Principal{ID: id, Role: claims.Role}, nil
+	return Principal{ID: id, Role: claims.Role}, claims.ExpiresAt.Time, nil
 }

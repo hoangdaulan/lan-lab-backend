@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,11 @@ type Config struct {
 	// heartbeat (BACKEND_CONTEXT.md §19: 60 s).
 	WorkerLease time.Duration
 
+	// WSAllowedOrigins are extra Origin host patterns allowed to open the
+	// WebSocket (e.g. a front-end dev server "localhost:5173"); same-origin
+	// is always allowed.
+	WSAllowedOrigins []string
+
 	// JudgeWorkDir holds per-job scratch directories (compiled binaries,
 	// program output); it must not be under DATA_DIR.
 	JudgeWorkDir string
@@ -60,6 +66,11 @@ func Load() (Config, error) {
 		WorkerID:    os.Getenv("WORKER_ID"),
 
 		JudgeWorkDir: getenv("JUDGE_WORK_DIR", "/var/judge"),
+	}
+	for _, o := range strings.Split(os.Getenv("WS_ALLOWED_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
+		}
 	}
 
 	var err error
