@@ -36,7 +36,11 @@ ENTRYPOINT ["/app/api"]
 FROM runtime-base AS worker
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /var/judge \
+ && chmod 0711 /var/judge
 COPY --from=build /out/worker /app/
-USER app
+# Stays root: it needs CAP_SYS_ADMIN/SETUID/SETGID to start each student
+# program in a new network namespace as an unprivileged runner uid
+# (internal/sandbox). docker-compose.yml limits the capability set.
 ENTRYPOINT ["/app/worker"]

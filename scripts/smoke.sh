@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test HTTP cho API v1 trên stack dev đang chạy (docs/IMPLEMENTATION_PLAN.md).
 #
-#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|all]
+#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|all]
 #
 # Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
 # tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
@@ -459,21 +459,78 @@ section_submissions() {
 	echo "    race outcome: $BODY"
 }
 
+# wait_result SUBMISSION_ID TOKEN -> polls until the run is completed/system_error
+wait_result() {
+	local i
+	for i in $(seq 1 60); do
+		req GET "/submissions/$1" "" "$2"
+		if [[ $(jget '(d["result"] or {}).get("status")') =~ ^(completed|system_error)$ ]]; then
+			return 0
+		fi
+		sleep 0.5
+	done
+	return 1
+}
+
+section_judge() {
+	echo "== judge (needs the worker with the sandbox)"
+	local tt st code="SMK${RUN}J"
+	tt=$(teacher_token)
+	new_student "$code" "$tt" >/dev/null
+	st=$(login "$code" "$code")
+	make_exam "$tt"
+	req POST "/exams/$EXAM_ID/problems" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
+	local pid dir
+	pid=$(jget 'd["id"]')
+	dir="$DATA_HOST_DIR/$(jget 'd["test_dir"]')"
+	printf '1 2\n' >"$dir/1.in"
+	printf '3\n' >"$dir/1.out"
+	printf '10 20\n' >"$dir/2.in"
+	printf '30\n' >"$dir/2.out"
+	printf '100 1\n' >"$dir/3.in"
+	printf '101\n' >"$dir/3.out"
+	req POST "/problems/$pid/rejudge" "" "$tt"
+	req POST "/sessions/$RUNNING_ID/join" "" "$st"
+
+	local name want src
+	while IFS='|' read -r name want src; do
+		printf '%b' "$src" >"$TMP/$name.cpp"
+		upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/$name.cpp" "$st"
+		local sid
+		sid=$(jget 'd["id"]')
+		if ! wait_result "$sid" "$st"; then
+			bad "$name: not judged within 30 s"
+			continue
+		fi
+		expect "$name -> $want" 200 "'%d/%d %s' % (d['result']['passed_tests'], d['result']['total_tests'], d['result']['verdict']) == '$want' and 'system_error' not in d['result']"
+	done <<'EOF'
+ac|3/3 AC|#include <cstdio>\nint main(){long long a,b;scanf("%lld %lld",&a,&b);printf("%lld\\n",a+b);}
+wa_test2|1/3 WA|#include <cstdio>\nint main(){long long a,b;scanf("%lld %lld",&a,&b);printf("%lld\\n",a==1?3:a-b);}
+tle_test3|2/3 TLE|#include <cstdio>\nint main(){long long a,b;scanf("%lld %lld",&a,&b);if(a==100)for(volatile int i=0;;i++);printf("%lld\\n",a+b);}
+re|0/3 RE|int main(){volatile int*p=0;*p=1;}
+ce|0/3 CE|int main(){ return }
+EOF
+	req GET "/submissions/$(jget 'd["id"]')" "" "$st"
+	expect "student sees compile output for CE" 200 '"error" in (d["result"]["compile_output"] or "")'
+}
+
 case ${1:-all} in
 auth) section_auth ;;
 students) section_students ;;
 exams) section_exams ;;
 problems) section_problems ;;
 submissions) section_submissions ;;
+judge) section_judge ;;
 all)
 	section_auth
 	section_students
 	section_exams
 	section_problems
 	section_submissions
+	section_judge
 	;;
 *)
-	echo "usage: $0 [auth|students|exams|problems|submissions|all]" >&2
+	echo "usage: $0 [auth|students|exams|problems|submissions|judge|all]" >&2
 	exit 2
 	;;
 esac

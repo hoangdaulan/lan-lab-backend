@@ -386,7 +386,11 @@ Người dùng trả lời các đề xuất của agent:
 
 - **Verdict (cập nhật cùng ngày):** chạy test theo thứ tự (`test_cases.id`) và **dừng ở test không AC đầu tiên**; `passed_tests` = số test đúng trước test đó, `total_tests` = tổng số test, verdict tổng = verdict của test đó (ví dụ test 11/15 TLE → `10/15 TLE`). Test sau đó **không chạy và không có dòng** trong `submission_test_results`. CE xét trước khi chạy test. AC khi mọi test AC. Thay câu "không tự suy ra cơ chế dừng sau test sai đầu tiên" ở mục 6.
 - **Biên dịch:** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch 10 giây, compile output trả SV được cắt gọn.
-- **Sandbox: chưa chốt.** Người dùng hỏi về `isolate` (kích thước, cách tích hợp); phase 9 chờ quyết định.
+- **Sandbox (chốt cùng ngày): `setrlimit`, không dùng isolate.** Triển khai (`internal/sandbox`, `internal/cppjudge`):
+  - Worker là root trong container, `cap_drop: ALL` + `cap_add: SYS_ADMIN, SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL`, `no-new-privileges`. Biên dịch và chạy bài đều dưới uid riêng 20000+slot, network namespace rỗng, không capability, `no_new_privs`.
+  - Giới hạn chạy: CPU = time limit, wall = 2 × time limit + 1 s, AS = memory + 64 MB, STACK = memory, stdout ≤ 64 MB, NPROC 1, NOFILE 16. Biên dịch: 10 s, 1.5 GB, NPROC 64; output biên dịch trả SV cắt 8 KB.
+  - MLE = RSS đỉnh > giới hạn, hoặc chết với `std::bad_alloc`; chương trình bỏ qua `malloc` thất bại rồi crash bị tính RE (giới hạn của `setrlimit` khi không có cgroup). Ghi > 64 MB stdout → RE.
+  - Worker `chmod 0750` thư mục `DATA_DIR` khi khởi động để runner uid không đọc được test/bài nộp khác.
 - **File nộp:** chỉ đuôi `.cpp`, ≤ 64 KB, không rỗng; không bắt buộc UTF-8.
 - **Hàng đợi:** tối đa 3 lần thử cho lỗi hạ tầng, backoff 5 s / 30 s / 2 phút; lease 60 s, worker gia hạn định kỳ khi đang chấm; `WORKER_CONCURRENCY` mặc định 2.
 - **Chấm lại thủ công một bài:** run cũ → `obsolete`, tạo run + job mới cùng version. Thay `UNIQUE (submission_id, problem_version)` bằng unique index một phần `WHERE status <> 'obsolete'` (sửa migration `00001` khi làm phase 10). Thay câu "một run cho mỗi `(submission_id, problem_version)`" ở mục 9 thành "một run **không obsolete**".

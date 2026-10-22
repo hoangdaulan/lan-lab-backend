@@ -26,7 +26,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong (xếp hàng chấm lại ở phase 10) |
 | 7 | Nộp bài | ✅ xong |
 | 8 | Hàng đợi chấm bền vững | ✅ xong (chờ sandbox để chấm thật) |
-| 9 | Sandbox chấm C++17 | chưa làm |
+| 9 | Sandbox chấm C++17 | ✅ xong |
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | chưa làm |
 | 11 | WebSocket trạng thái chấm | chưa làm |
 | 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | chưa làm |
@@ -318,26 +318,31 @@ make test-integration
 **Mục tiêu:** biên dịch và chạy bài SV an toàn; verdict đúng.
 
 **Công việc**
-- Snapshot: chép source + test + giới hạn + version vào thư mục tạm riêng của job (giữ khóa SHARE problem khi chép).
+- Snapshot đọc trong transaction claim (phase 8); source chép vào thư mục tạm riêng của job (`/var/judge/job<id>-a<attempt>`, 0700, chủ là runner uid).
 - Biên dịch: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE` (Đã chốt 22/10/2026, câu 2), timeout 10 s, giới hạn bộ nhớ/output biên dịch; ghi `compiler_info` thực tế; compile output cắt gọn.
-- Chạy từng test: user không đặc quyền, không mạng (network namespace riêng hoặc tương đương), `setrlimit` CPU/AS/NPROC/FSIZE/NOFILE, wall-clock timeout, giới hạn stdout; đo thời gian + bộ nhớ.
+- Chạy từng test (Đã chốt 22/10/2026, câu 3 — `setrlimit`): uid riêng mỗi slot (20000+slot), network namespace rỗng (`CLONE_NEWNET`), không capability, `no_new_privs`; `setrlimit` CPU (= time limit), AS (= memory + 64 MB), STACK (= memory), FSIZE (stdout 64 MB), NPROC 1, NOFILE 16, CORE 0; wall-clock = 2 × time limit + 1 s; dọn tiến trình còn sót bằng `kill(-1)` dưới uid đó. Biên dịch cũng chạy trong sandbox (uid riêng, 10 s, 1.5 GB, NPROC 64).
+- Phát hiện: TLE = hết wall-clock / CPU > time limit / SIGXCPU; MLE = RSS đỉnh > giới hạn hoặc chương trình chết với `std::bad_alloc`; RE = tín hiệu khác / mã thoát ≠ 0 (kể cả SIGXFSZ khi stdout > 64 MB). Giới hạn đã biết: chương trình C bỏ qua `malloc` thất bại rồi crash sẽ là RE thay vì MLE (không có cgroup).
+- `DATA_DIR` được worker `chmod 0750` khi khởi động (chủ là `APP_UID`) để runner uid không đọc được test/bài nộp khác; worker là root trong container với `cap_drop: ALL` + `cap_add: SYS_ADMIN, SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL`, `no-new-privileges`.
 - So sánh theo token (bỏ qua khoảng trắng/xuống dòng).
 - Verdict test: AC/WA/TLE/MLE/RE; verdict run: CE ở cấp run; AC khi tất cả test AC. Chạy test theo thứ tự, **dừng ở test không AC đầu tiên**; `passed_tests` = số test đúng trước đó, verdict tổng = verdict của test đó (Đã chốt 22/10/2026, câu 1); API trả `passed_tests`, `total_tests`, `verdict` để FE hiện `10/15 TLE`.
 - Ghi kết quả từng test + tổng hợp run + job done trong một transaction (kiểm tra lại version/lease dưới khóa).
 
 **Checklist**
-- [ ] Bộ bài mẫu: AC, WA, TLE (vòng lặp vô hạn), MLE (cấp phát lớn), RE (chia 0 / segfault), CE (lỗi cú pháp) → đúng verdict
-- [ ] Chương trình mở socket → thất bại (không mạng)
-- [ ] Fork bomb bị chặn (NPROC), output 1 GB bị cắt (FSIZE/giới hạn đọc)
-- [ ] Đọc file ngoài thư mục chấm (vd. `/data/problems/...`) → không được
-- [ ] `compiler_info` ghi `g++ (Debian 12.2.0-…) 12.2.0`
-- [ ] SV không thấy input/output test ẩn, không thấy `system_error`
-- [ ] Bài không có test không được AC
+- [x] Bộ bài mẫu: AC, WA, TLE (vòng lặp vô hạn), MLE (cấp phát lớn), RE (chia 0 / segfault), CE (lỗi cú pháp) → đúng verdict — 22/10: `make test-sandbox` (binary test chạy trong container worker, g++ thật): AC, WA dừng ở test 2, TLE (vòng lặp, `sleep`), MLE (`new` 1 GB → bad_alloc; malloc 150 MB với giới hạn 128 MB → RSS), RE (segfault, chia 0, `return 3` sau 1 test đúng), CE, đệ quy sâu trong giới hạn vẫn AC. Qua API (`scripts/smoke.sh judge`): `3/3 AC`, `1/3 WA`, `2/3 TLE`, `0/3 RE`, `0/3 CE`
+- [x] Chương trình mở socket → thất bại (không mạng) — 22/10: `TestNoNetwork`: worker tự nối được `postgres:5432`, chương trình SV nối `postgres:5432`, `1.1.1.1:80`, `127.0.0.1:5432` đều thất bại. Đột biến: bỏ `CLONE_NEWNET` → test fail
+- [x] Fork bomb bị chặn (NPROC), output 1 GB bị cắt (FSIZE/giới hạn đọc) — 22/10: 1000 lần `fork` đều thất bại (in `0`); ghi 1 GB → SIGXFSZ ở 64 MB → RE; sau mỗi bài không còn tiến trình nào của runner uid
+- [x] Đọc file ngoài thư mục chấm (vd. `/data/problems/...`) → không được — 22/10: đáp án của chính test, source SV khác, `/proc/1/environ` (chứa `DATABASE_URL`) đều không mở được; `#include` file source SV khác lúc biên dịch → CE `Permission denied`. Chương trình chạy với uid 20000+, `CapEff` = 0, `NoNewPrivs` = 1 (`TestIdentityAndPrivileges`). `./data` trên host thành `drwxr-x---`
+- [x] `compiler_info` ghi `g++ (Debian 12.2.0-…) 12.2.0` — 22/10: kiểm trong mọi case của `TestVerdicts`; log worker `judger ready compiler="g++ (Debian 12.2.0-14+deb12u1) 12.2.0"`
+- [x] SV không thấy input/output test ẩn, không thấy `system_error` — 22/10: API SV không có `system_error`, `/submissions/{id}/tests` → 403 (phase 7); chương trình không đọc được file test (ở trên)
+- [x] Bài không có test không được AC — 22/10: nộp vào problem 0 test bị chặn 409 (phase 7); judger trả lỗi hạ tầng cho job không có test (`TestJudgeInfrastructureErrors`); `Outcome.Validate` từ chối `total_tests = 0`
+
+- [x] 18 bài nộp `queued` từ các phase trước được chấm qua stack thật — 22/10: 16 × `1/1 AC`, 2 × `0/1 CE` (file 64 KB toàn khoảng trắng, không có `main`)
 
 **Kiểm tra cuối phase**
 ```bash
-go test -race -count=1 ./internal/judge/...
-scripts/smoke.sh judge   # nộp bộ bài mẫu, chờ verdict
+go test -race -count=1 ./internal/cppjudge/ ./internal/judge/
+make test-sandbox
+scripts/smoke.sh judge
 ```
 
 ---
@@ -469,8 +474,8 @@ Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai.
    - **Đã chốt 22/10/2026: duyệt.**
    - Đề xuất: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch **10 giây**. `-static` để chương trình không phụ thuộc thư viện động khi chạy trong môi trường hạn chế; `ONLINE_JUDGE` theo thói quen của các hệ chấm. Compile output trả SV được cắt gọn (vd. 8 KB).
 3. **Sandbox**.
-   - **Chưa chốt:** người dùng hỏi về `isolate` (có làm image phình to không). Phase 9 chờ quyết định này.
-   - Đề xuất ban đầu: không dùng nsjail/isolate (phải tải về). Chạy bài SV bằng `setrlimit` (CPU, AS, FSIZE, NPROC) + **uid riêng không đặc quyền** + `unshare -n` (namespace mạng rỗng, kể cả không tới được `postgres`); container worker cần `cap_add: [SYS_ADMIN]`. Tiến trình con bỏ mọi capability, bật `no_new_privs`, chạy trong thư mục tạm riêng của job. Rủi ro: `SYS_ADMIN` là quyền rộng cho tiến trình worker — chấp nhận vì chỉ chạy trong LAN, worker không ra Internet; kiểm chứng bằng bộ bài tấn công ở phase 9.
+   - **Đã chốt 22/10/2026: dùng `setrlimit`** (không dùng isolate). Đã làm ở phase 9.
+   - Đề xuất: không dùng nsjail/isolate (phải tải về). Chạy bài SV bằng `setrlimit` (CPU, AS, FSIZE, NPROC) + **uid riêng không đặc quyền** + `unshare -n` (namespace mạng rỗng, kể cả không tới được `postgres`); container worker cần `cap_add: [SYS_ADMIN]`. Tiến trình con bỏ mọi capability, bật `no_new_privs`, chạy trong thư mục tạm riêng của job. Rủi ro: `SYS_ADMIN` là quyền rộng cho tiến trình worker — chấp nhận vì chỉ chạy trong LAN, worker không ra Internet; kiểm chứng bằng bộ bài tấn công ở phase 9.
 4. **Kiểm tra file nộp**.
    - **Đã chốt 22/10/2026: duyệt.**
    - Đề xuất: chỉ nhận tên file đuôi **`.cpp`**, **≤ 64 KB**, không rỗng; **không** bắt buộc UTF-8 (tránh từ chối bài có chú thích tiếng Việt mã hóa khác). Server tự đặt tên khi lưu, không giữ tên gốc (mục 7).
