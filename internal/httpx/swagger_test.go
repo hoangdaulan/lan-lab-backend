@@ -30,8 +30,8 @@ func TestSwaggerServesUIAssetsAndSpecification(t *testing.T) {
 			for _, methods := range spec.Paths {
 				count += len(methods)
 			}
-			if count != 38 {
-				t.Fatalf("expected 38 implemented operations, got %d", count)
+			if count != 42 {
+				t.Fatalf("expected 42 implemented operations, got %d", count)
 			}
 			if !strings.Contains(string(spec.Paths["/api/v1/students/import"]["post"]), "multipart/form-data") {
 				t.Fatal("CSV upload must use multipart form data")

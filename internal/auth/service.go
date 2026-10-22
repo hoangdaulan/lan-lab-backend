@@ -167,6 +167,11 @@ func (s *Service) ChangePassword(ctx context.Context, p Principal, current, next
 }
 
 // VerifyAccessToken implements TokenVerifier for the HTTP middleware.
+// VerifyAccessTokenExpiry is VerifyAccessToken plus the token's expiry.
+func (s *Service) VerifyAccessTokenExpiry(token string) (Principal, time.Time, error) {
+	return s.signer.VerifyWithExpiry(token, s.now())
+}
+
 func (s *Service) VerifyAccessToken(token string) (Principal, error) {
 	return s.signer.Verify(token, s.now())
 }

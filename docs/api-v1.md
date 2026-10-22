@@ -8,7 +8,7 @@
 - Khi chuyển vai trò giáo viên/sinh viên, thay token trong Authorize. Refresh token nhập riêng trong body của refresh/logout.
 - Import CSV: `POST /api/v1/students/import` → **Try it out** → chọn file ở trường `file`. Mẫu ở `examples/students-import.csv`.
 - Chỉnh ngày giờ trong request tạo phiên cho phù hợp lúc test; ID lấy từ response thực tế.
-- Swagger mô tả 38 thao tác hiện có. Worker chấm thật (g++ C++17 trong sandbox); chấm lại problem/bài nộp đã hoạt động; WebSocket chưa có.
+- Swagger mô tả 42 thao tác REST. Worker chấm thật (g++ C++17 trong sandbox); chấm lại problem/bài nộp đã hoạt động. WebSocket `/api/v1/ws` không nằm trong Swagger (không phải REST) — xem mục "Chi tiết WebSocket"; thử bằng `go run ./cmd/wsprobe`.
 - Đặc tả được duy trì trong `docs/swagger.json` và `docs/swagger.yaml`, nhúng vào binary bằng `docs/docs.go`. Không chạy `swag init` ghi đè khi handler chưa có annotation đầy đủ.
 - Khi sửa code/spec trong môi trường Compose, build lại API: `docker compose up -d --build --no-deps api`.
 
@@ -98,17 +98,19 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/ws` | T/S | WebSocket; message đầu tiên `{"type":"auth","data":{"token":"..."}}`; server push `run.updated` | |
+| GET | `/ws` | T/S | WebSocket; message đầu `auth`, `subscribe` phiên; server đẩy `run.updated`, `summary.updated` (GV), `announcement`, `resync` | ✅ |
+| POST | `/sessions/{id}/announcements` | T | Gửi thông báo tới cả phiên (đẩy qua WS) | ✅ |
+| GET | `/sessions/{id}/announcements` | T/S | Thông báo của phiên (xem lại khi nối lại) | ✅ |
 | GET | `/admin/queue` | T | Số job queued/running/failed, worker đang chạy | |
 
-Message WebSocket: JSON `{"type": string, "data": object}`. Server kiểm tra Origin.
+Message WebSocket: JSON `{"type": string, "data": object}`. Server kiểm tra Origin. Chi tiết ở cuối tài liệu.
 
 ## 7. Tổng hợp AC
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/sessions/{sid}/summary` | T | Mỗi SV × problem: AC / chưa / đang chấm; tổng `x/N AC` | |
-| GET | `/sessions/{sid}/summary/me` | S | Tổng hợp của chính mình | |
+| GET | `/sessions/{id}/summary` | T | Mỗi SV × problem: AC / chưa / đang chấm; tổng `x/N AC`; SV online; hàng đợi | ✅ |
+| GET | `/sessions/{id}/summary/me` | S | Tổng hợp của chính mình | ✅ |
 
 Chỉ tính run có `problem_version = problems.version`. Không có điểm số.
 
@@ -313,3 +315,62 @@ Bài nộp + `compiler_info`, `compile_output` trong `result`; `system_error` ch
 ### `POST /submissions/{id}/rejudge` (T)
 
 Chấm lại một bài: run hiện hành và job của nó chuyển `obsolete`, tạo run + job mới ở version hiện tại; bài khác không đổi. Trả **202** + đối tượng bài nộp (`result.status = "queued"`). GV không sở hữu đề → 404. Mỗi (bài nộp, version) có tối đa một run không `obsolete` (unique index một phần `judge_runs_current_idx`).
+
+## Chi tiết Tổng hợp và thông báo
+
+### `GET /sessions/{id}/summary` (T) — `GET /sessions/{id}/summary/me` (S)
+
+```json
+{"session_id": 3, "problems_total": 2,
+ "problems": [{"id": 5, "code": "A", "title": "Tong"}, {"id": 6, "code": "B", "title": "Hieu"}],
+ "rows": [{"student_id": 7, "student_code": "B21DCCN001", "student_fullname": "Nguyen Van A",
+           "status": "in_progress", "online": true, "ac_count": 1,
+           "cells": [{"problem_id": 5, "state": "ac", "submissions": 2,
+                      "latest": {"submission_id": 41, "status": "completed", "verdict": "WA", "passed_tests": 10, "total_tests": 15}},
+                     {"problem_id": 6, "state": "none", "submissions": 0, "latest": null}]}],
+ "online_count": 1, "queue": {"queued": 3, "running": 2}, "generated_at": "..."}
+```
+
+- `state`: `ac` (có run hiện hành AC — bài sai nộp sau **không** làm mất AC cùng version), `pending` (đang chờ/chấm, hoặc chờ chấm lại), `attempted` (đã chấm, không AC, kể cả `system_error`), `none`. FE hiện `ac_count/problems_total AC`.
+- `latest`: kết quả hiện hành của bài nộp mới nhất trong ô (dạng `10/15 TLE`).
+- `online`/`online_count`: SV đang mở WebSocket và subscribe phiên này. `queue`: toàn hệ thống.
+- SV (`/summary/me`): chỉ dòng của mình, phải đã tham gia (403), trước `starts_at` không có `problems`/`cells`; `online_count` = 0.
+
+### Thông báo
+
+- `POST /sessions/{id}/announcements` (T, chủ đề) `{"text": "Còn 10 phút"}` (1–1000 ký tự) → 201 `{id, session_id, text, created_at}` và đẩy ngay `announcement` qua WebSocket tới mọi client đang subscribe phiên.
+- `GET /sessions/{id}/announcements` (T/S) → `{"data": [...]}` mới nhất trước, tối đa 50.
+- Lưu **trong bộ nhớ API** (không có bảng; mất khi API khởi động lại). Chọn REST + WS thay vì gửi qua WS: có kiểm tra quyền/validation/mã lỗi như mọi API, GV gửi được kể cả khi không mở WS, dễ test.
+
+## Chi tiết WebSocket
+
+`GET /api/v1/ws` (HTTP Upgrade). Không dùng header Authorization: token gửi trong message đầu để không lộ trên URL/log.
+
+- **Origin:** chỉ cùng origin với API, cộng các mẫu trong biến môi trường `WS_ALLOWED_ORIGINS` (vd. `localhost:5173` cho FE dev). Origin lạ → 403, không upgrade.
+- **Message:** JSON text `{"type": string, "data": object}`, tối đa 4 KB từ client.
+
+Client → server:
+
+| type | data | Ghi chú |
+|---|---|---|
+| `auth` | `{"token": "<access JWT>"}` | Bắt buộc là message đầu, trong 5 s. Gửi lại token mới (cùng tài khoản) trước khi hết hạn để giữ kết nối. |
+| `subscribe` | `{"session_id": 3}` | Một phiên mỗi lúc. GV chỉ phiên của mình; SV phiên bất kỳ (chỉ nhận bài của mình). |
+
+Server → client:
+
+| type | data | Ai nhận |
+|---|---|---|
+| `auth.ok` | `{user_id, role, expires_at}` | người vừa xác thực |
+| `subscribed` | `{session_id}` | người vừa subscribe |
+| `run.updated` | bài nộp + `result` hiện hành (giống REST) | SV chủ bài (mọi tab); GV chủ đề đang subscribe phiên đó |
+| `summary.updated` | như `GET /sessions/{id}/summary` | GV đang subscribe phiên (gộp ~300 ms, làm mới mỗi 5 s) |
+| `announcement` | `{id, session_id, text, created_at}` | mọi client đang subscribe phiên |
+| `resync` | `{}` | mọi client, khi server có thể đã lỡ sự kiện → tải lại bằng REST |
+| `error` | `{message}` | message không hợp lệ / subscribe bị từ chối |
+
+Vòng đời một bài: nộp (REST 202) → `run.updated` `queued` → `judging` → `completed` (`passed_tests/total_tests verdict`). Chấm lại (problem hoặc 1 bài) → mọi SV bị ảnh hưởng nhận `queued` ở version mới rồi kết quả mới.
+
+- **Mã đóng:** `4001` xác thực sai / không gửi auth kịp / token hết hạn; `1008` client đọc quá chậm (bộ đệm đầy) hoặc quá 8 kết nối/tài khoản; `1000` bình thường.
+- **Ping/pong** mỗi 20 s; không có pong → server đóng (phát hiện mất mạng).
+- **Nối lại:** client mở lại kết nối, `auth` + `subscribe`, rồi tải trạng thái bằng REST (`/submissions/{id}`, `/sessions/{id}/summary`, `/announcements`). Server không gửi lại sự kiện đã lỡ.
+- **Nguồn sự kiện:** mọi chỗ đổi trạng thái run gọi `pg_notify('judge_events', ...)` trong cùng transaction (chỉ gửi sau COMMIT); API giữ một kết nối `LISTEN`, nạp lại trạng thái từ DB rồi đẩy. Mất kết nối `LISTEN` → tự nối lại (backoff 1–10 s) và gửi `resync`.

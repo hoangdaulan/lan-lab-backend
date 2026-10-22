@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/hoangdaulan/lan-lab-backend/internal/apperr"
+	"github.com/hoangdaulan/lan-lab-backend/internal/events"
 )
 
 type pgRepository struct {
@@ -234,6 +235,11 @@ func requeueProblem(ctx context.Context, tx pgx.Tx, problemID int64, newVersion 
 		   RETURNING id)
 		 INSERT INTO judge_jobs (judge_run_id) SELECT id FROM runs`, problemID, newVersion)
 	if err != nil {
+		return 0, err
+	}
+	// One notification for the whole fan-out; the listener loads the
+	// problem's submissions after COMMIT.
+	if err := events.Problem(ctx, tx, problemID); err != nil {
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil

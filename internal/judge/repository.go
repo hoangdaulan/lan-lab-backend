@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/hoangdaulan/lan-lab-backend/internal/events"
 )
 
 // Every transaction here locks in the order problem -> judge_run ->
@@ -178,6 +180,9 @@ func (r *pgRepository) tryClaim(ctx context.Context, jobID int64, workerID strin
 			 WHERE id = $1`, runID); err != nil {
 			return err
 		}
+		if err := events.SubmissionOfRun(ctx, tx, runID); err != nil {
+			return err
+		}
 		job.JobID, job.RunID, job.LeaseToken = jobID, runID, token
 		if err := tx.QueryRow(ctx,
 			`SELECT s.id, s.source_path, p.id, p.version, p.time_limit_ms, p.memory_limit_mb
@@ -291,10 +296,12 @@ func (r *pgRepository) Complete(ctx context.Context, job Job, o Outcome) error {
 			job.RunID, o.Verdict, o.PassedTests, o.TotalTests, o.CompilerInfo, o.CompileOutput); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx,
+		if _, err := tx.Exec(ctx,
 			`UPDATE judge_jobs SET status = 'done', worker_id = NULL, lease_token = NULL,
-			   lease_expires_at = NULL, last_error = NULL, updated_at = clock_timestamp() WHERE id = $1`, job.JobID)
-		return err
+			   lease_expires_at = NULL, last_error = NULL, updated_at = clock_timestamp() WHERE id = $1`, job.JobID); err != nil {
+			return err
+		}
+		return events.SubmissionOfRun(ctx, tx, job.RunID)
 	})
 	if errors.Is(err, errSkipCommit) {
 		return ErrStale
@@ -322,6 +329,9 @@ func (r *pgRepository) Fail(ctx context.Context, job Job, cause string, policy R
 // after the last attempt mark the run system_error and the job failed.
 // It never turns an infrastructure error into a program verdict (§10).
 func failLocked(ctx context.Context, tx pgx.Tx, jobID, runID int64, attempt int, cause string, policy RetryPolicy) (bool, error) {
+	if err := events.SubmissionOfRun(ctx, tx, runID); err != nil {
+		return false, err
+	}
 	if attempt >= policy.MaxAttempts {
 		if _, err := tx.Exec(ctx, `DELETE FROM submission_test_results WHERE judge_run_id = $1`, runID); err != nil {
 			return false, err

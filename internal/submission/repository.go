@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/hoangdaulan/lan-lab-backend/internal/apperr"
+	"github.com/hoangdaulan/lan-lab-backend/internal/events"
 )
 
 type pgRepository struct {
@@ -99,8 +100,10 @@ func (r *pgRepository) Create(ctx context.Context, n NewSubmission) (Submission,
 			id, version).Scan(&runID); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID)
-		return err
+		if _, err := tx.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID); err != nil {
+			return err
+		}
+		return events.Submission(ctx, tx, id) // delivered after COMMIT
 	})
 	if err != nil {
 		return Submission{}, err
@@ -246,8 +249,10 @@ func (r *pgRepository) Rejudge(ctx context.Context, id int64) (Submission, error
 			id, version).Scan(&runID); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID)
-		return err
+		if _, err := tx.Exec(ctx, `INSERT INTO judge_jobs (judge_run_id) VALUES ($1)`, runID); err != nil {
+			return err
+		}
+		return events.Submission(ctx, tx, id)
 	})
 	if err != nil {
 		return Submission{}, err

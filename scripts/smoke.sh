@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test HTTP cho API v1 trên stack dev đang chạy (docs/IMPLEMENTATION_PLAN.md).
 #
-#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|rejudge|all]
+#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|rejudge|ws|all]
 #
 # Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
 # tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
@@ -171,17 +171,17 @@ section_students() {
 	printf 'code,full_name\n%s,Pham D\n%s,\n%s,Dup\n' "${b}X" "${c}X" "${b,,}x" >"$TMP/bad.csv"
 	upload /students/import "$TMP/bad.csv" "$tt"
 	expect "bad CSV rejected with row errors" 400 '[r["line"] for r in d["row_errors"]] == [3, 4]'
-	req GET "/students?q=${b}X" "" "$tt"
-	expect "bad CSV saved nothing" 200 'd["total"] == 0'
+	req GET "/students?query=${b}X" "" "$tt"
+	expect "bad CSV saved nothing" 200 'd["data"] == [] and d["totalPages"] == 0'
 
 	printf '\xef\xbb\xbfcode,full_name,class\n%s,Tran Thi B,D21\n%s,Again,D21\n%s,"Le, Van C",D21\n%s,Teacher,D21\n' "$b" "$a" "$c" "$TEACHER_CODE" >"$TMP/ok.csv"
 	upload /students/import "$TMP/ok.csv" "$tt"
 	expect "import skips existing + teacher codes" 200 'd["created_count"] == 2 and [(s["line"], s["reason"]) for s in d["skipped"]] == [(3, "already exists"), (5, "code belongs to a teacher account")]'
 
-	req GET "/students?q=SMK${RUN}&limit=2" "" "$tt"
-	expect "list search + paging" 200 'd["total"] >= 3 and len(d["items"]) == 2 and d["limit"] == 2'
-	req GET "/students?q=$TEACHER_CODE" "" "$tt"
-	expect "teachers never listed as students" 200 'all(s["code"] != "'"${TEACHER_CODE^^}"'" for s in d["items"])'
+	req GET "/students?query=SMK${RUN}&pageSize=2" "" "$tt"
+	expect "list search + paging" 200 'd["totalPages"] >= 2 and len(d["data"]) == 2 and d["pageSize"] == 2 and d["page"] == 1'
+	req GET "/students?query=$TEACHER_CODE" "" "$tt"
+	expect "teachers never listed as students" 200 'all(s["code"] != "'"${TEACHER_CODE^^}"'" for s in d["data"])'
 
 	req POST /auth/login "{\"code\":\"$b\",\"password\":\"$b\"}"
 	expect "imported student logs in with MSV" 200
@@ -220,7 +220,7 @@ section_exams() {
 	req POST "/exams/$EXAM_ID/problems" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
 
 	req GET /me/sessions "" "$st"
-	expect "student sees sessions" 200 "any(i['id'] == $RUNNING_ID and i['participation'] is None for i in d['items'])"
+	expect "student sees sessions" 200 "any(i['id'] == $RUNNING_ID and i['participation'] is None for i in d['data'])"
 	req GET "/sessions/$UPCOMING_ID" "" "$st"
 	expect "upcoming hides problems" 200 'd["problems_hidden"] and d["problems"] == []'
 	req GET "/sessions/$RUNNING_ID" "" "$st"
@@ -243,7 +243,7 @@ section_exams() {
 	req POST "/sessions/$RUNNING_ID/finish" "" "$st"
 	expect "finish is idempotent" 200 "d['finished_at'] == '$fin'"
 	req GET "/sessions/$RUNNING_ID/participants" "" "$tt"
-	expect "participants" 200 "[(p['student_code'], p['status']) for p in d['items']] == [('$code', 'finished')]"
+	expect "participants" 200 "[(p['student_code'], p['status']) for p in d['data']] == [('$code', 'finished')]"
 	req DELETE "/exams/$EXAM_ID" "" "$tt"
 	expect "delete exam with children" 409
 	req DELETE "/sessions/$UPCOMING_ID" "" "$tt"
@@ -258,7 +258,7 @@ section_exams() {
 		req GET "/sessions/$RUNNING_ID/participants" "" "$t2"
 		expect "other teacher cannot list participants" 404
 		req GET /exams "" "$t2"
-		expect "other teacher's exam list excludes it" 200 "all(e['id'] != $EXAM_ID for e in d['items'])"
+		expect "other teacher's exam list excludes it" 200 "all(e['id'] != $EXAM_ID for e in d['data'])"
 	else
 		echo "  (skip ownership checks: set SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD)"
 	fi
@@ -299,7 +299,7 @@ section_problems() {
 	req POST "/problems/$pid/rejudge" "" "$tt"
 	expect "rejudge syncs tests in numeric order" 200 'd["problem"]["version"] == 2 and [t["name"] for t in d["tests"]] == ["1", "2", "10"]'
 	req GET "/problems/$pid/tests" "" "$tt"
-	expect "list tests" 200 'len(d["items"]) == 3'
+	expect "list tests" 200 'len(d["data"]) == 3'
 
 	req PUT "/problems/$pid" '{"code":"A","title":"Sum 2","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
 	expect "text edit keeps version" 200 'd["problem"]["version"] == 2 and not d["rejudge_queued"]'
@@ -395,13 +395,13 @@ section_submissions() {
 	req GET "/submissions/$sid/source" "" "$st2"
 	expect "other student cannot download source" 404
 	req GET "/sessions/$RUNNING_ID/submissions" "" "$st2"
-	expect "student list shows only own" 200 'd["items"] == []'
+	expect "student list shows only own" 200 'd["data"] == []'
 	req GET "/sessions/$RUNNING_ID/submissions?student_id=0" "" "$tt"
 	expect "bad filter" 400
 	req GET "/sessions/$RUNNING_ID/submissions?problem_id=$pid" "" "$tt"
-	expect "teacher lists session" 200 'len(d["items"]) == 2'
+	expect "teacher lists session" 200 'len(d["data"]) == 2'
 	req GET "/submissions/$sid/tests" "" "$tt"
-	expect "teacher per-test results (none yet)" 200 'd["items"] == []'
+	expect "teacher per-test results (none yet)" 200 'd["data"] == []'
 	req GET "/submissions/$sid/tests" "" "$st"
 	expect "student cannot read per-test results" 403
 
@@ -445,7 +445,7 @@ section_submissions() {
 		code_sub=$(cat "$TMP/race-sub-code-$i")
 		req GET "/sessions/$RUNNING_ID/submissions?problem_id=$pid" "" "$tok"
 		local n
-		n=$(jget 'len(d["items"])')
+		n=$(jget 'len(d["data"])')
 		if [[ $code_sub == 202 && $n == 1 ]]; then
 			accepted=$((accepted + 1))
 		elif [[ $code_sub == 409 && $n == 0 ]] && grep -q finished "$TMP/race-sub-$i"; then
@@ -597,6 +597,102 @@ section_rejudge() {
 	expect "only that submission was rejudged" 200 "d['fast'].startswith('2/2 AC@v5') and d['slow_run'] == $slow_run"
 }
 
+# handshake ORIGIN -> HTTP status of a WebSocket upgrade with that Origin
+handshake() {
+	curl -s -o /dev/null -w '%{http_code}' --max-time 2 -H "Origin: $1" -H "Connection: Upgrade" -H "Upgrade: websocket" \
+		-H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" "$API/ws" || true
+}
+
+section_ws() {
+	echo "== ws (WebSocket; needs the worker with the sandbox)"
+	local probe=./bin/wsprobe
+	[[ -x $probe ]] || go build -o "$probe" ./cmd/wsprobe || {
+		bad "build cmd/wsprobe"
+		return
+	}
+	local tt s1 a="SMK${RUN}W1" b="SMK${RUN}W2"
+	tt=$(teacher_token)
+	new_student "$a" "$tt" >/dev/null
+	new_student "$b" "$tt" >/dev/null
+	s1=$(login "$a" "$a")
+	make_exam "$tt"
+	local pid
+	pid=$(make_problem "$tt" A)
+	req POST "/sessions/$RUNNING_ID/join" "" "$s1"
+	req POST "/sessions/$RUNNING_ID/join" "" "$(login "$b" "$b")"
+
+	STATUS=$(handshake "http://evil.example")
+	BODY='{}'
+	expect "foreign Origin rejected" 403
+	local host=${BASE#http://}
+	STATUS=$(handshake "http://$host")
+	expect "same Origin upgrades" 101
+
+	"$probe" -base "$BASE" -code "$a" -password "$a" -session "$RUNNING_ID" -duration 25s >"$TMP/w1.log" 2>&1 &
+	local p1=$!
+	"$probe" -base "$BASE" -code "$b" -password "$b" -session "$RUNNING_ID" -duration 25s >"$TMP/w2.log" 2>&1 &
+	local p2=$!
+	WSPROBE_PASSWORD=$TEACHER_PASSWORD "$probe" -base "$BASE" -code "$TEACHER_CODE" -session "$RUNNING_ID" -duration 25s >"$TMP/wt.log" 2>&1 &
+	local pt=$!
+	sleep 1.5
+
+	req GET "/sessions/$RUNNING_ID/summary" "" "$tt"
+	expect "REST board: 2 students online" 200 'd["online_count"] == 2 and d["problems_total"] == 1 and len(d["rows"]) == 2'
+
+	printf '#include <cstdio>\nint main(){long long a,b;scanf("%%lld %%lld",&a,&b);printf("%%lld\\n",a+b);}\n' >"$TMP/w.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/w.cpp" "$s1"
+	local sid
+	sid=$(jget 'd["id"]')
+	wait_result "$sid" "$s1"
+	req POST "/sessions/$RUNNING_ID/announcements" '{"text":"Còn 10 phút"}' "$tt"
+	expect "announcement posted" 201
+	req PUT "/problems/$pid" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":2000,"memory_limit_mb":256}' "$tt"
+	sleep 0.3
+	wait_result "$sid" "$s1"
+	req GET "/sessions/$RUNNING_ID/summary/me" "" "$s1"
+	expect "student summary: own row, 1/1 AC" 200 'len(d["rows"]) == 1 and d["rows"][0]["ac_count"] == 1'
+	req GET "/sessions/$RUNNING_ID/announcements" "" "$s1"
+	expect "announcements over REST (reconnect)" 200 'd["data"][0]["text"] == "Còn 10 phút"'
+	sleep 1
+	kill "$p1" "$p2" "$pt" 2>/dev/null
+	wait "$p1" "$p2" "$pt" 2>/dev/null
+
+	python3 - "$TMP/w1.log" "$TMP/w2.log" "$TMP/wt.log" "$sid" >"$TMP/ws.json" <<'PY'
+import json, sys
+def msgs(path):
+    out = []
+    for line in open(path):
+        parts = line.split(" ", 1)
+        if len(parts) == 2 and parts[1].startswith("{"):
+            out.append(json.loads(parts[1]))
+    return out
+w1, w2, wt, sid = msgs(sys.argv[1]), msgs(sys.argv[2]), msgs(sys.argv[3]), int(sys.argv[4])
+runs = [m["data"] for m in w1 if m["type"] == "run.updated" and m["data"]["id"] == sid]
+res = [(r["result"] or {}) for r in runs]
+v0 = res[0].get("problem_version", 0) if res else 0  # version when submitted
+print(json.dumps({
+  "w1_types": sorted({m["type"] for m in w1}),
+  "w1_statuses": ["%s@v%s" % (r.get("status"), r.get("problem_version")) for r in res],
+  "w1_final_v1": any(r.get("status") == "completed" and r.get("verdict") == "AC" and r.get("problem_version") == v0 for r in res),
+  "w1_requeued_v2": any(r.get("status") == "queued" and r.get("problem_version") == v0 + 1 for r in res),
+  "w1_final_v2": any(r.get("status") == "completed" and r.get("verdict") == "AC" and r.get("problem_version") == v0 + 1 for r in res),
+  "w1_announcement": any(m["type"] == "announcement" and m["data"]["text"] == "Còn 10 phút" for m in w1),
+  "w2_runs": sum(1 for m in w2 if m["type"] == "run.updated"),
+  "w2_announcement": any(m["type"] == "announcement" for m in w2),
+  "t_runs": sum(1 for m in wt if m["type"] == "run.updated"),
+  "t_board_ac": max([r["ac_count"] for m in wt if m["type"] == "summary.updated" for r in m["data"]["rows"]] or [0]),
+  "t_board_online": max([m["data"]["online_count"] for m in wt if m["type"] == "summary.updated"] or [0]),
+}))
+PY
+	STATUS=200 BODY=$(cat "$TMP/ws.json")
+	expect "student: queued -> judging -> 1/1 AC pushed" 200 'd["w1_final_v1"] and "auth.ok" in d["w1_types"] and "subscribed" in d["w1_types"]'
+	expect "student: rejudge pushed as queued at version+1 then AC" 200 'd["w1_requeued_v2"] and d["w1_final_v2"]'
+	expect "announcement pushed to both students" 200 'd["w1_announcement"] and d["w2_announcement"]'
+	expect "other student got no run.updated" 200 'd["w2_runs"] == 0'
+	expect "teacher: run.updated + live board (1 AC, 2 online)" 200 'd["t_runs"] >= 3 and d["t_board_ac"] == 1 and d["t_board_online"] == 2'
+	echo "    $BODY"
+}
+
 case ${1:-all} in
 auth) section_auth ;;
 students) section_students ;;
@@ -605,6 +701,7 @@ problems) section_problems ;;
 submissions) section_submissions ;;
 judge) section_judge ;;
 rejudge) section_rejudge ;;
+ws) section_ws ;;
 all)
 	section_auth
 	section_students
@@ -613,9 +710,10 @@ all)
 	section_submissions
 	section_judge
 	section_rejudge
+	section_ws
 	;;
 *)
-	echo "usage: $0 [auth|students|exams|problems|submissions|judge|rejudge|all]" >&2
+	echo "usage: $0 [auth|students|exams|problems|submissions|judge|rejudge|ws|all]" >&2
 	exit 2
 	;;
 esac

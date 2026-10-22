@@ -409,3 +409,8 @@ Người dùng yêu cầu đổi các API danh sách sang `PagedList<T>` của M
 ## Cập nhật: chi tiết đề có danh sách problem
 
 Người dùng đã duyệt bổ sung `problems: [{id, code, title}]` vào `GET /api/v1/exams/{id}`. Danh sách đầy đủ sắp theo `code` rồi `id`; rỗng trả `[]`, không bọc PagedList vì nằm trong response chi tiết. Giữ kiểm tra quyền giáo viên sở hữu đề. Response danh sách/tạo/sửa đề không thay đổi theo cập nhật này.
+
+## Cập nhật: phạm vi WebSocket (phase 11) — Đã chốt 22/10/2026
+
+Người dùng chọn: **tối thiểu** (`/api/v1/ws`, Origin, auth ở message đầu, ping/pong, `subscribe` theo phiên, `run.updated` qua `NOTIFY/LISTEN`, nối lại + REST bù) **+ bảng GV trực tiếp** (`summary.updated`: `x/N AC` theo SV × problem, SV online, độ dài hàng đợi; kèm REST tổng hợp của phase 12) **+ thông báo của GV tới phiên** **+ chấm lại hiện ngay cho SV bị ảnh hưởng**. Không làm tiến độ từng test và hẹn giờ phiên.
+- **Triển khai phase 11:** `internal/events` (`pg_notify` trong transaction ở nhận bài, worker nhận, có kết quả, retry/lỗi hạ tầng, chấm lại), `internal/realtime` (hub, `/api/v1/ws`, listener `LISTEN` tự nối lại + `resync`), `internal/board` (bảng `x/N AC` + thông báo). Thông báo lưu **trong bộ nhớ API** (tối đa 50/phiên, mất khi API khởi động lại) vì không có bảng — muốn lưu bền cần thêm migration (chưa duyệt). Gửi thông báo qua REST `POST /sessions/{id}/announcements` rồi đẩy WS (kiểm tra quyền/validation như mọi API). Biến môi trường mới `WS_ALLOWED_ORIGINS`. Giao thức chi tiết: `docs/api-v1.md` mục "Chi tiết WebSocket".
