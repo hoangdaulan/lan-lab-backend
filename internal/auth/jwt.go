@@ -46,6 +46,9 @@ func (s *JWTSigner) Verify(token string, now time.Time) (Principal, error) {
 		func(*jwt.Token) (any, error) { return s.secret, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithExpirationRequired(),
+		// Reject non-canonical base64 (altered unused trailing bits), so a
+		// token string has exactly one accepted spelling.
+		jwt.WithStrictDecoding(),
 		jwt.WithTimeFunc(func() time.Time { return now }),
 	)
 	if err != nil {

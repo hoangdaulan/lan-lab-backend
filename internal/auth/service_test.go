@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,6 +239,21 @@ func TestAccessTokenExpiresAndRejectsTampering(t *testing.T) {
 	other := NewJWTSigner("another-secret-another-secret-123", 15*time.Minute)
 	if _, err := other.Verify(tokens.AccessToken, clock.t); !errors.Is(err, ErrInvalidAccessToken) {
 		t.Errorf("verify with other secret err = %v", err)
+	}
+	// Every single-character change of the signature must be rejected,
+	// including the last character whose low bits are base64 padding.
+	tok := tokens.AccessToken
+	sigStart := strings.LastIndex(tok, ".") + 1
+	for i := sigStart; i < len(tok); i++ {
+		for _, c := range []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") {
+			if tok[i] == c {
+				continue
+			}
+			tampered := tok[:i] + string(c) + tok[i+1:]
+			if _, err := svc.VerifyAccessToken(tampered); !errors.Is(err, ErrInvalidAccessToken) {
+				t.Fatalf("tampered signature at %d (%q) accepted", i-sigStart, c)
+			}
+		}
 	}
 	clock.advance(15*time.Minute + time.Second)
 	if _, err := svc.VerifyAccessToken(tokens.AccessToken); !errors.Is(err, ErrInvalidAccessToken) {
