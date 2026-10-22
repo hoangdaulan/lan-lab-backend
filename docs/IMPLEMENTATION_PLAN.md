@@ -21,7 +21,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 1 | Docker Compose, cấu hình, biến môi trường | ✅ xong |
 | 2 | Schema DB, migration, gộp bảng `users` | ✅ xong |
 | 3 | Auth (JWT, refresh token) | ✅ xong |
-| 4 | Quản lý sinh viên | kiểm chứng |
+| 4 | Quản lý sinh viên | ✅ xong |
 | 5 | Đề, phiên, tham gia | kiểm chứng |
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | kiểm chứng |
 | 7 | Nộp bài | chưa làm |
@@ -177,14 +177,14 @@ scripts/smoke.sh auth
 - Import: dòng lỗi → từ chối cả file; mã đã có → bỏ qua và báo (`already exists` / `code belongs to a teacher account`).
 
 **Checklist**
-- [ ] Unit test pass
-- [ ] Tạo SV: mã trim + viết hoa, tên gộp khoảng trắng; 201
-- [ ] Trùng mã SV hoặc mã GV → 409
-- [ ] Import CSV lỗi → 400, `row_errors` đúng dòng, không lưu gì
-- [ ] Import có mã trùng → bỏ qua đúng dòng + lý do; phần còn lại lưu
-- [ ] List chỉ có SV (không lẫn GV), tìm theo mã/tên, phân trang
-- [ ] SV đăng nhập bằng MSV; SV gọi `/students` → 403
-- [ ] Reset → mật khẩu về MSV, refresh token cũ 401; id của GV → 404
+- [x] Unit test pass — 22/10: `go test -race ./internal/student/` ok (11 test, gồm mã của GV bị 409 và báo lý do khi import)
+- [x] Tạo SV: mã trim + viết hoa, tên gộp khoảng trắng; 201 — 22/10: `scripts/smoke.sh students` 15/15
+- [x] Trùng mã SV hoặc mã GV → 409 — 22/10: cả hai 409 `code already used by another account`; mã có khoảng trắng 400
+- [x] Import CSV lỗi → 400, `row_errors` đúng dòng, không lưu gì — 22/10: dòng 3 (thiếu tên), 4 (trùng trong file); tìm lại mã → total 0
+- [x] Import có mã trùng → bỏ qua đúng dòng + lý do; phần còn lại lưu — 22/10: CSV có BOM + cột `class`: tạo 2; bỏ qua dòng 3 `already exists`, dòng 5 `code belongs to a teacher account`
+- [x] List chỉ có SV (không lẫn GV), tìm theo mã/tên, phân trang — 22/10: `limit=2` trả 2 bản ghi, `total` đúng; tìm `GV01` không ra giáo viên
+- [x] SV đăng nhập bằng MSV; SV gọi `/students` → 403 — 22/10: `scripts/smoke.sh students` 15/15
+- [x] Reset → mật khẩu về MSV, refresh token cũ 401; id của GV → 404 — 22/10: `scripts/smoke.sh students` 15/15
 
 **Kiểm tra cuối phase**
 ```bash
