@@ -61,6 +61,11 @@ func toExam(e Exam) examResponse {
 		CreatedAt: e.CreatedAt.UTC(), UpdatedAt: e.UpdatedAt.UTC()}
 }
 
+type examDetailResponse struct {
+	examResponse
+	Problems []problemSummaryResponse `json:"problems"`
+}
+
 type sessionResponse struct {
 	ID        int64     `json:"id"`
 	ExamID    int64     `json:"exam_id"`
@@ -138,7 +143,7 @@ func (h *Handler) listExams(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"items": mapSlice(exams, toExam)})
+	httpx.WritePagedList(w, r, mapSlice(exams, toExam), nil)
 }
 
 func (h *Handler) createExam(w http.ResponseWriter, r *http.Request) {
@@ -161,12 +166,15 @@ func (h *Handler) getExam(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	e, err := h.svc.OwnedExam(r.Context(), principal(r).ID, id)
+	e, err := h.svc.ExamDetail(r.Context(), principal(r).ID, id)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toExam(e))
+	httpx.JSON(w, http.StatusOK, examDetailResponse{
+		examResponse: toExam(e.Exam),
+		Problems:     mapSlice(e.Problems, func(p ProblemSummary) problemSummaryResponse { return problemSummaryResponse(p) }),
+	})
 }
 
 func (h *Handler) updateExam(w http.ResponseWriter, r *http.Request) {
@@ -221,9 +229,7 @@ func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": mapSlice(sessions, func(s Session) sessionResponse { return toSession(s, now) }),
-	})
+	httpx.WritePagedList(w, r, mapSlice(sessions, func(s Session) sessionResponse { return toSession(s, now) }), nil)
 }
 
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +294,7 @@ func (h *Handler) listParticipants(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"items": mapSlice(parts, toParticipant)})
+	httpx.WritePagedList(w, r, mapSlice(parts, toParticipant), nil)
 }
 
 func (h *Handler) getSession(w http.ResponseWriter, r *http.Request) {
@@ -333,12 +339,9 @@ func (h *Handler) mySessions(w http.ResponseWriter, r *http.Request) {
 		sessionResponse
 		Participation *participantResponse `json:"participation"`
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"server_time": now.UTC(),
-		"items": mapSlice(items, func(s StudentSession) item {
-			return item{sessionResponse: toSession(s.Session, now), Participation: toParticipantPtr(s.Participation)}
-		}),
-	})
+	httpx.WritePagedList(w, r, mapSlice(items, func(s StudentSession) item {
+		return item{sessionResponse: toSession(s.Session, now), Participation: toParticipantPtr(s.Participation)}
+	}), map[string]any{"server_time": now.UTC()})
 }
 
 func (h *Handler) join(w http.ResponseWriter, r *http.Request) {

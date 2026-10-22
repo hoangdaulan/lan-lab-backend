@@ -364,26 +364,63 @@
         "operationId": "get__api_v1_students",
         "parameters": [
           {
-            "name": "q",
-            "in": "query",
-            "type": "string"
-          },
-          {
-            "name": "limit",
+            "name": "page",
             "in": "query",
             "type": "integer",
-            "default": 50
+            "minimum": 1,
+            "default": 1
           },
           {
-            "name": "offset",
+            "name": "pageSize",
             "in": "query",
             "type": "integer",
-            "default": 0
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "type": "string",
+            "description": "Tìm chuỗi con trong code/fullname."
           }
         ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Student"
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -594,10 +631,59 @@
         ],
         "summary": "Danh sách đề",
         "operationId": "get__api_v1_exams",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Exam"
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -712,7 +798,7 @@
           "200": {
             "description": "Thành công",
             "schema": {
-              "$ref": "#/definitions/Exam"
+              "$ref": "#/definitions/ExamDetail"
             }
           },
           "400": {
@@ -884,11 +970,59 @@
             "format": "int64",
             "minimum": 1,
             "description": "ID thực tế trả về từ API, không mặc định là 1."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Session"
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -1181,11 +1315,59 @@
             "format": "int64",
             "minimum": 1,
             "description": "ID thực tế trả về từ API, không mặc định là 1."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Participant"
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -1227,10 +1409,76 @@
         ],
         "summary": "Danh sách phiên và trạng thái tham gia",
         "operationId": "get__api_v1_me_sessions",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/Session"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "participation": {
+                            "$ref": "#/definitions/Participant",
+                            "x-nullable": true
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                },
+                "server_time": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -1462,11 +1710,59 @@
             "format": "int64",
             "minimum": 1,
             "description": "ID thực tế trả về từ API, không mặc định là 1."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Problem"
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -1760,11 +2056,74 @@
             "format": "int64",
             "minimum": 1,
             "description": "ID thực tế trả về từ API, không mặc định là 1."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
           "200": {
-            "description": "Thành công"
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
+            "schema": {
+              "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "input": {
+                        "type": "string"
+                      },
+                      "output": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                },
+                "test_dir": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "description": "Dữ liệu không hợp lệ",
@@ -1972,6 +2331,21 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
@@ -2006,15 +2380,37 @@
             }
           },
           "200": {
-            "description": "Thành công",
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
             "schema": {
               "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
               "properties": {
-                "items": {
+                "data": {
                   "type": "array",
                   "items": {
                     "$ref": "#/definitions/Submission"
                   }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
                 }
               }
             }
@@ -2158,6 +2554,21 @@
             "format": "int64",
             "minimum": 1,
             "description": "ID thực tế trả về từ API, không mặc định là 1."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Tối đa 200; giá trị lớn hơn được giới hạn về 200."
           }
         ],
         "responses": {
@@ -2192,18 +2603,40 @@
             }
           },
           "200": {
-            "description": "Thành công",
+            "description": "PagedList tương thích Mesgo; data luôn là array, không có dữ liệu thì totalPages = 0.",
             "schema": {
               "type": "object",
+              "required": [
+                "data",
+                "page",
+                "pageSize",
+                "totalPages"
+              ],
               "properties": {
-                "submission": {
-                  "$ref": "#/definitions/Submission"
-                },
-                "items": {
+                "data": {
                   "type": "array",
                   "items": {
                     "$ref": "#/definitions/TestResult"
                   }
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "example": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "example": 20
+                },
+                "totalPages": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 3
+                },
+                "submission": {
+                  "$ref": "#/definitions/Submission"
                 }
               }
             }
@@ -2767,6 +3200,51 @@
           "x-nullable": true
         }
       }
+    },
+    "ProblemSummary": {
+      "type": "object",
+      "required": [
+        "id",
+        "code",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1
+        },
+        "code": {
+          "type": "string",
+          "example": "A"
+        },
+        "title": {
+          "type": "string",
+          "example": "Tổng hai số"
+        }
+      }
+    },
+    "ExamDetail": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/Exam"
+        },
+        {
+          "type": "object",
+          "required": [
+            "problems"
+          ],
+          "properties": {
+            "problems": {
+              "type": "array",
+              "description": "Tất cả problem của đề, sắp theo code rồi id; rỗng là []. Không phân trang.",
+              "items": {
+                "$ref": "#/definitions/ProblemSummary"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

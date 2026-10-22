@@ -19,6 +19,17 @@ Ngày chốt: **21/10/2026**. Quyết định nền: `BACKEND_CONTEXT.md` mục 
 - Xác thực: `Authorization: Bearer <access JWT>` cho mọi route trừ login/refresh/healthz.
 - Trạng thái cột "Làm": ✅ đã triển khai, trống = chưa.
 
+
+## Danh sách và phân trang (PagedList Mesgo)
+
+- Mọi endpoint GET danh sách dùng `?page=1&pageSize=20`: trang bắt đầu từ 1, mặc định 20 phần tử/trang, tối đa 200. Kích thước lớn hơn được giới hạn về 200 và trả lại giá trị thực tế.
+- Response: `{"data": [], "page": 1, "pageSize": 20, "totalPages": 0}`. `data` luôn là array; tổng trang tính trên dữ liệu sau lọc. Trang vượt cuối trả `data: []`, giữ page yêu cầu và totalPages thực tế.
+- Giá trị page/pageSize không phải số nguyên dương hoặc gây tràn offset trả 400. Không dùng `items`, `total`, `limit`, `offset` ở response danh sách nữa.
+- Danh sách sinh viên tìm bằng `query` (thay `q`); các filter `student_id`, `problem_id` của bài nộp giữ nguyên. Các danh sách khác chưa có tìm kiếm bằng `query`.
+- Áp dụng: students, exams, các phiên của đề, participants, me/sessions, các problem của đề, tests của problem, submissions của phiên và tests của submission.
+- Metadata `server_time`, `test_dir`, `submission` giữ ở cấp ngoài cùng cạnh bốn trường PagedList. Các array bên trong response chi tiết hoặc kết quả thao tác như import/rejudge không đổi thành PagedList.
+- Sinh viên phân trang tại SQL. Những danh sách còn lại hiện lấy danh sách đã sắp xếp/kiểm tra quyền rồi phân trang trong bộ nhớ; cần chuyển xuống repository nếu dữ liệu tăng lớn.
+
 ## 1. Auth
 
 | Method | Path | Vai trò | Mục đích | Làm |
@@ -179,12 +190,12 @@ Mọi route yêu cầu access token của **giáo viên** (403 nếu là sinh vi
 
 Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã thuộc một tài khoản khác (kể cả giáo viên).
 
-### `GET /students?q=&limit=50&offset=0`
+### `GET /students?query=&page=1&pageSize=20`
 
-`q` tìm chuỗi con (không phân biệt hoa thường) trong `code` hoặc `fullname`. `limit` mặc định 50, tối đa 200. Sắp theo `code`.
+`query` tìm chuỗi con (không phân biệt hoa thường) trong `code` hoặc `fullname`. Phân trang theo quy ước PagedList bên dưới. Sắp theo `code`.
 
 ```json
-{"items": [ ... ], "total": 3, "limit": 50, "offset": 0}
+{"data": [ ... ], "page": 1, "pageSize": 20, "totalPages": 3}
 ```
 
 ### `POST /students/import`
@@ -224,7 +235,8 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 ### Đề
 
 - `POST /exams`, `PUT /exams/{id}`: `{"title": "...", "description": "..."}`; `title` 1–255 ký tự.
-- `GET /exams` → `{"items": [exam...]}`, mới nhất trước. Exam: `{id, title, description, created_at, updated_at}`.
+- `GET /exams` → `PagedList<Exam>`, mới nhất trước. Exam: `{id, title, description, created_at, updated_at}`.
+- `GET /exams/{id}` → thông tin đề (`id`, `title`, `description`, `created_at`, `updated_at`) kèm `problems: [{id, code, title}]`. Array đầy đủ, sắp theo `code` rồi `id`, rỗng trả `[]`, không bọc PagedList. Chỉ giáo viên sở hữu đề; đề không tồn tại/thuộc người khác trả 404.
 - `DELETE /exams/{id}` → 204; 409 nếu đề còn problem hoặc phiên (xóa chúng trước).
 
 ### Phiên
@@ -232,9 +244,9 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 - `POST /exams/{id}/sessions`, `PUT /sessions/{id}`: `{"name": "...", "starts_at": "...", "ends_at": "..."}`; bắt buộc cả hai mốc, `ends_at > starts_at`. Backend không tự đặt thời lượng.
 - Session: `{id, exam_id, exam_title, name, starts_at, ends_at, state}`.
 - `DELETE /sessions/{id}` → 204 (xóa luôn danh sách tham gia); 409 nếu đã có bài nộp.
-- `GET /sessions/{id}/participants` (T) → `{"items": [participant...]}`. Participant: `{id, session_id, student_id, student_code, student_fullname, status, joined_at, finished_at}`; `status` là `in_progress` hoặc `finished`.
+- `GET /sessions/{id}/participants` (T) → `PagedList<Participant>`. Participant: `{id, session_id, student_id, student_code, student_fullname, status, joined_at, finished_at}`; `status` là `in_progress` hoặc `finished`.
 - `GET /sessions/{id}` (T/S) → `{"session": ..., "server_time": ..., "problems": [{id, code, title}], "problems_hidden": bool}`; sinh viên có thêm `participation` (participant hoặc `null`). Với sinh viên, trước `starts_at` thì `problems` rỗng và `problems_hidden = true`.
-- `GET /me/sessions` (S) → `{"server_time": ..., "items": [session + "participation"]}`: mọi phiên của mọi đề.
+- `GET /me/sessions` (S) → `PagedList<Session + participation>` kèm `server_time`: mọi phiên của mọi đề.
 - `POST /sessions/{id}/join` (S) → 200 participant. Chưa tham gia: chỉ được khi `running`, ngoài ra 409 (`session has not started` / `session has ended`). Đã tham gia: trả bản ghi cũ ở mọi trạng thái (vào lại sau mất mạng).
 - `POST /sessions/{id}/finish` (S) → 200 participant `finished`. Gọi lại trả kết quả cũ, không đổi `finished_at`. 409 nếu chưa tham gia. Không có API mở lại.
 
@@ -250,7 +262,7 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 - Problem: `{id, exam_id, code, title, statement, time_limit_ms, memory_limit_mb, version, test_dir, created_at, updated_at}`. `test_dir` là thư mục test tương đối với `DATA_DIR` (trên máy server: `./data/problems/<id>/tests`), được tạo khi tạo problem.
 - `PUT /problems/{id}` → `{"problem": ..., "rejudge_queued": bool, "requeued_submissions": n}`. Đổi `time_limit_ms` hoặc `memory_limit_mb` → `version + 1` và chấm lại mọi bài nộp (`rejudge_queued: true`); chỉ sửa chữ thì không.
 - `DELETE /problems/{id}` → 204 (xóa luôn các dòng `test_cases`; file test trên đĩa giữ nguyên); 409 nếu đã có bài nộp.
-- `GET /problems/{id}/tests` → `{"test_dir": ..., "items": [{id, input, output}]}` theo thứ tự chấm.
+- `GET /problems/{id}/tests` → `PagedList<{id, input, output}>` kèm `test_dir` theo thứ tự chấm.
 - `POST /problems/{id}/rejudge` → quét `test_dir`:
   - mỗi `N.in` phải có `N.out` và ngược lại; file rỗng hợp lệ; file khác đuôi và file ẩn bị bỏ qua; symlink/thư mục con bị từ chối; tối đa 500 test;
   - thứ tự: tên là số thì theo số (`2` trước `10`), còn lại theo tên;
@@ -284,7 +296,7 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 
 ### `GET /sessions/{id}/submissions?student_id=&problem_id=` (T/S)
 
-`{"items": [bài nộp...]}`, mới nhất trước. SV chỉ thấy bài của mình (`student_id` bị bỏ qua); GV phải sở hữu đề (404 nếu không).
+`PagedList<Submission>`, mới nhất trước. SV chỉ thấy bài của mình (`student_id` bị bỏ qua); GV phải sở hữu đề (404 nếu không).
 
 ### `GET /submissions/{id}` (T/S)
 
@@ -296,7 +308,7 @@ Bài nộp + `compiler_info`, `compile_output` trong `result`; `system_error` ch
 
 ### `GET /submissions/{id}/tests` (T)
 
-`{"submission": ..., "items": [{test_case_id, verdict, execution_time_ms, memory_used_kb}]}` của run hiện hành. Khi dừng ở test sai đầu tiên, chỉ các test đã chạy có dòng.
+`PagedList<{test_case_id, verdict, execution_time_ms, memory_used_kb}>` kèm `submission` của run hiện hành. Khi dừng ở test sai đầu tiên, chỉ các test đã chạy có dòng.
 
 ### `POST /submissions/{id}/rejudge` (T)
 

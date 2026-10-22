@@ -201,7 +201,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	for _, s := range subs {
 		items = append(items, toResponse(s, false))
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
+	httpx.WritePagedList(w, r, items, nil)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +259,7 @@ func (h *Handler) tests(w http.ResponseWriter, r *http.Request) {
 	for _, t := range results {
 		items = append(items, testResultResponse(t))
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"submission": toResponse(sub, true, true), "items": items})
+	httpx.WritePagedList(w, r, items, map[string]any{"submission": toResponse(sub, true, true)})
 }
 
 func (h *Handler) rejudge(w http.ResponseWriter, r *http.Request) {

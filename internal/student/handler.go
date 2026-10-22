@@ -50,23 +50,17 @@ func toResponses(in []Student) []studentResponse {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	limit, err1 := queryInt(r, "limit", DefaultPageSize)
-	offset, err2 := queryInt(r, "offset", 0)
-	if err1 != nil || err2 != nil {
-		httpx.Error(w, http.StatusBadRequest, "limit and offset must be integers")
+	paging, err := httpx.ReadPagination(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, err := h.svc.List(r.Context(), r.URL.Query().Get("q"), limit, offset)
+	page, err := h.svc.List(r.Context(), r.URL.Query().Get("query"), paging.PageSize, paging.Offset())
 	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":  toResponses(page.Items),
-		"total":  page.Total,
-		"limit":  page.Limit,
-		"offset": page.Offset,
-	})
+	httpx.JSON(w, http.StatusOK, httpx.NewPagedList(toResponses(page.Items), page.Total, paging))
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -148,12 +142,4 @@ func (h *Handler) writeError(w http.ResponseWriter, err error) {
 		h.log.Error("student request failed", "err", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal error")
 	}
-}
-
-func queryInt(r *http.Request, key string, def int) (int, error) {
-	v := r.URL.Query().Get(key)
-	if v == "" {
-		return def, nil
-	}
-	return strconv.Atoi(v)
 }
