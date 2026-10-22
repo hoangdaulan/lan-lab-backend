@@ -174,7 +174,7 @@ Chi tiết kiểu dữ liệu/constraint/index xem `database/schema-design.sql`.
 - `test_cases` không có `position`; có thể dùng `id` để có thứ tự ổn định.
 - Không có `auth_sessions`; đã thay bằng `refresh_tokens`.
 - Không có bảng tổng điểm; kết quả AC được truy vấn từ lượt chấm hiện hành.
-- Một run cho mỗi `(submission_id, problem_version)`; retry hạ tầng dùng lại run đó, không tạo thêm run trùng version.
+- **[Sẽ thay ở phase 10, mục 19: một run không obsolete]** Một run cho mỗi `(submission_id, problem_version)`; retry hạ tầng dùng lại run đó, không tạo thêm run trùng version.
 - Một job cho mỗi run; nhận bài phải tạo submission + run + job cùng transaction.
 
 ## 10. Transaction, hàng đợi và phục hồi
@@ -279,7 +279,7 @@ Người dùng xác nhận tiếp tục theo tài liệu này (**Go + PostgreSQL
 |---|---|
 | HTTP router | `github.com/go-chi/chi/v5` |
 | PostgreSQL driver/pool | `github.com/jackc/pgx/v5` (`pgxpool`) |
-| Truy vấn | `sqlc` (sinh code từ `migrations/` + `queries/` vào `internal/db/sqlc`) |
+| Truy vấn | ~~`sqlc`~~ — **đã thay thế 22/10/2026 (mục 19)**: pgx viết tay |
 | Migration | `github.com/pressly/goose/v3`, file SQL nhúng vào binary `cmd/migrate` |
 | WebSocket | `github.com/coder/websocket` |
 
@@ -295,7 +295,6 @@ internal/httpx    router gốc, helper JSON, nâng cấp WebSocket
 internal/{auth,exam,problem,submission,judge}
                   mỗi feature: handler.go → service.go → repository.go
 migrations/    00001_init.sql = DDL của database/schema-design.sql bọc goose
-queries/       câu SQL cho sqlc
 ```
 
 - Interface đặt ở ranh giới **service ↔ repository**: `service.go` khai báo `Repository`, `repository.go` cài đặt bằng pgx. Handler gọi `*Service`.
@@ -356,7 +355,7 @@ Người dùng duyệt các quyết định dưới đây. Danh sách endpoint c
 
 - `code` tài khoản được chuẩn hóa **trim + viết hoa** trước khi lưu và khi tra cứu (đề xuất của agent, cần người dùng xác nhận nếu MSV/mã GV có chữ thường cần giữ nguyên).
 - Login, refresh, đổi mật khẩu khóa hàng tài khoản trước rồi mới tới refresh token; login và đổi mật khẩu kiểm tra lại `password_hash` dưới khóa.
-- **sqlc chưa dùng**: môi trường agent không tải được sqlc, nên repository auth viết tay bằng pgx. `sqlc.yaml` và `make sqlc` vẫn giữ để chuyển sang sau.
+- **[Đã thay thế 22/10/2026, mục 19]** sqlc chưa dùng: môi trường agent không tải được sqlc, nên repository auth viết tay bằng pgx.
 - Thư mục `./data` bind mount; container chạy với `APP_UID:APP_GID` (mặc định 10001) phải trùng chủ sở hữu `./data`.
 
 ### Ghi chú triển khai sinh viên, đề, phiên, problem (nhánh `feature/students`, `feature/exams`)
@@ -380,3 +379,19 @@ Người dùng quyết định ("gộp đi") gộp `teachers` và `students` th�
 - FK đổi đích: `exams.teacher_id → users`, `exam_participants.student_id → users`; `refresh_tokens` chỉ còn `user_id NOT NULL` (bỏ `teacher_id`/`student_id` và CHECK chọn một). Index mới: `users_role_code_idx (role, code)`, `refresh_tokens_user_idx (user_id)` (thay hai index refresh token cũ) — vẫn 13 index bổ sung.
 - **Ràng buộc vai trò nằm ở tầng service, không có trigger/CHECK chéo bảng**: `exams.teacher_id` luôn lấy từ JWT đã qua `RequireRole(teacher)`, `exam_participants.student_id` từ JWT đã qua `RequireRole(student)`; truy vấn quản lý sinh viên luôn lọc `role = 'student'`. Không có API đổi `role`.
 - `migrations/00001_init.sql` và `database/schema-design.sql` được sửa trực tiếp (chưa có dữ liệu thật); DB dev được xóa volume `pgdata` và tạo lại.
+
+## 19. Quyết định ngày 22/10/2026 (câu hỏi trong `docs/IMPLEMENTATION_PLAN.md`)
+
+Người dùng trả lời các đề xuất của agent:
+
+- **Verdict:** chạy hết mọi test; verdict tổng = verdict của test sai đầu tiên theo thứ tự test (`test_cases.id`); CE xét trước khi chạy test. FE hiển thị `passed/total + verdict`, ví dụ `10/15 TLE`, nên API trả `passed_tests`, `total_tests`, `verdict`.
+- **Biên dịch:** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch 10 giây, compile output trả SV được cắt gọn.
+- **Sandbox: chưa chốt.** Người dùng hỏi về `isolate` (kích thước, cách tích hợp); phase 9 chờ quyết định.
+- **File nộp:** chỉ đuôi `.cpp`, ≤ 64 KB, không rỗng; không bắt buộc UTF-8.
+- **Hàng đợi:** tối đa 3 lần thử cho lỗi hạ tầng, backoff 5 s / 30 s / 2 phút; lease 60 s, worker gia hạn định kỳ khi đang chấm; `WORKER_CONCURRENCY` mặc định 2.
+- **Chấm lại thủ công một bài:** run cũ → `obsolete`, tạo run + job mới cùng version. Thay `UNIQUE (submission_id, problem_version)` bằng unique index một phần `WHERE status <> 'obsolete'` (sửa migration `00001` khi làm phase 10). Thay câu "một run cho mỗi `(submission_id, problem_version)`" ở mục 9 thành "một run **không obsolete**".
+- **WebSocket:** PostgreSQL `LISTEN/NOTIFY`, polling dự phòng.
+- **Không làm** rate limit, **không làm** thêm chống gian lận, **không thêm** cột lớp học (LAN, một lớp làm bài cùng lúc).
+- **Giữ nguyên** các lựa chọn agent ở mục 17–18.
+- **Bàn giao:** theo `Submission.md` (thư mục `NhomXX_TenProject/{Source,Report}`, USB qua lớp trưởng), giữ thêm bản Google Drive.
+- **Bỏ sqlc:** xóa `sqlc.yaml`, `queries/`, target `make sqlc`; repository viết tay bằng pgx.

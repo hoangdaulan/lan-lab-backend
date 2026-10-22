@@ -1,6 +1,4 @@
-SQLC_VERSION ?= latest
-
-.PHONY: up down migrate seed sqlc build test data
+.PHONY: up down migrate seed build test data
 
 # ./data is bind-mounted into api and worker; create it before compose does
 # (compose would create it as root).
@@ -26,10 +24,6 @@ seed:
 	docker compose run --rm \
 		-e SEED_TEACHER_CODE -e SEED_TEACHER_FULLNAME -e SEED_TEACHER_PASSWORD \
 		--entrypoint /app/seed api
-
-# Regenerate internal/db/sqlc from migrations/ + queries/.
-sqlc:
-	go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 
 build:
 	go build -o bin/ ./cmd/...
