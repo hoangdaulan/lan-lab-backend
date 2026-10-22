@@ -19,7 +19,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 |---|---|---|
 | 0 | Repo, công cụ, quy ước | ✅ xong (trừ sqlc) |
 | 1 | Docker Compose, cấu hình, biến môi trường | ✅ xong |
-| 2 | Schema DB, migration, gộp bảng `users` | kiểm chứng + làm mới |
+| 2 | Schema DB, migration, gộp bảng `users` | ✅ xong |
 | 3 | Auth (JWT, refresh token) | kiểm chứng |
 | 4 | Quản lý sinh viên | kiểm chứng |
 | 5 | Đề, phiên, tham gia | kiểm chứng |
@@ -119,14 +119,14 @@ docker compose restart api worker && docker compose logs --tail 20 api worker
 - Tạo lại DB dev: chỉ xóa volume `pgdata`, giữ `./data`.
 
 **Checklist**
-- [ ] DDL migration khớp `schema-design.sql` (so sánh tự động)
-- [ ] `make migrate` trên DB trống → version 1; 11 bảng; 13 index `*_idx`
-- [ ] Down rồi up lại trên DB nháp chạy sạch
-- [ ] `users.code` UNIQUE toàn bảng; `role` chỉ nhận `teacher`/`student`
-- [ ] FK tới `users`: `exams.teacher_id`, `exam_participants.student_id`, `refresh_tokens.user_id` (CASCADE)
-- [ ] CHECK của `judge_runs`/`judge_jobs` chặn trạng thái sai (thử insert sai)
-- [ ] `docs/api-v1.md` và `BACKEND_CONTEXT.md` ghi quyết định gộp bảng, đánh dấu quyết định cũ đã thay thế
-- [ ] DB dev tạo lại: chỉ volume `pgdata` bị xóa; `./data` giữ nguyên
+- [x] DDL migration khớp `schema-design.sql` (so sánh tự động) — 22/10: so dòng DDL bằng Python (`difflib`), giống hệt
+- [x] `make migrate` trên DB trống → version 1; 11 bảng; 13 index `*_idx` — 22/10: DB nháp `judge_scratch`: `OK 00001_init.sql`, version 1, 11 bảng, 13 index
+- [x] Down rồi up lại trên DB nháp chạy sạch — 22/10: down → 0 bảng, up lại → version 1; DB nháp đã xóa
+- [x] `users.code` UNIQUE toàn bảng; `role` chỉ nhận `teacher`/`student` — 22/10: SV trùng mã `GV01` → `users_code_key`; `role='admin'` → `users_role_check`; mã toàn khoảng trắng → `users_code_check`
+- [x] FK tới `users`: `exams.teacher_id`, `exam_participants.student_id`, `refresh_tokens.user_id` (CASCADE) — 22/10: `pg_constraint`: exams/participants RESTRICT, refresh_tokens CASCADE (xóa user → 0 token còn lại). DB **không** chặn GV làm participant — đúng thiết kế, kiểm tra ở service (mục 18)
+- [x] CHECK của `judge_runs`/`judge_jobs` chặn trạng thái sai (thử insert sai) — 22/10: completed thiếu verdict, verdict khi chưa completed, AC thiếu test đều bị chặn; WA 2/3 hợp lệ; trùng (submission, version) và job running thiếu lease bị chặn
+- [x] `docs/api-v1.md` và `BACKEND_CONTEXT.md` ghi quyết định gộp bảng, đánh dấu quyết định cũ đã thay thế — 22/10: mục 18 mới; mục 4, 9, 17 gắn "[Đã thay thế 22/10/2026]"; Swagger login `{code,password}` (`/swagger/doc.json` thật: required `[code, password]`)
+- [x] DB dev tạo lại: chỉ volume `pgdata` bị xóa; `./data` giữ nguyên — 22/10 10:18: `docker volume rm backend_pgdata`, migrate + seed GV01; `./data/problems/*` còn nguyên
 
 **Kiểm tra cuối phase**
 ```bash

@@ -6,19 +6,16 @@
 
 BEGIN;
 
-CREATE TABLE teachers (
+-- Giao vien va sinh vien chung mot bang (quyet dinh 22/10/2026, thay hai bang
+-- teachers/students). code duy nhat tren toan bo tai khoan; role lay tu bang nay
+-- khi dang nhap. FK tro toi users khong tu kiem tra role: exams.teacher_id phai
+-- la role = 'teacher', exam_participants.student_id phai la role = 'student' --
+-- tang service bao dam (khong dung trigger).
+CREATE TABLE users (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    fullname varchar(200) NOT NULL CHECK (btrim(fullname) <> ''),
     code varchar(50) NOT NULL UNIQUE CHECK (btrim(code) <> ''),
-    password_hash text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE students (
-    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fullname varchar(200) NOT NULL CHECK (btrim(fullname) <> ''),
-    code varchar(50) NOT NULL UNIQUE CHECK (btrim(code) <> ''),
+    role varchar(10) NOT NULL CHECK (role IN ('teacher', 'student')),
     password_hash text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -26,7 +23,7 @@ CREATE TABLE students (
 
 CREATE TABLE exams (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    teacher_id bigint NOT NULL REFERENCES teachers(id) ON DELETE RESTRICT,
+    teacher_id bigint NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     title varchar(255) NOT NULL CHECK (btrim(title) <> ''),
     description text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -68,7 +65,7 @@ CREATE TABLE exam_sessions (
 CREATE TABLE exam_participants (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     exam_session_id bigint NOT NULL REFERENCES exam_sessions(id) ON DELETE RESTRICT,
-    student_id bigint NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+    student_id bigint NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     status varchar(20) NOT NULL DEFAULT 'in_progress'
         CHECK (status IN ('in_progress', 'finished')),
     joined_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -81,14 +78,12 @@ CREATE TABLE exam_participants (
 );
 
 -- Access token JWT khong luu trong DB. Refresh token la chuoi ngau nhien;
--- chi luu hash, khong luu token goc. Loai tai khoan duoc xac dinh khi dang nhap.
+-- chi luu hash, khong luu token goc.
 CREATE TABLE refresh_tokens (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    teacher_id bigint REFERENCES teachers(id) ON DELETE CASCADE,
-    student_id bigint REFERENCES students(id) ON DELETE CASCADE,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash bytea NOT NULL UNIQUE,
-    expires_at timestamptz NOT NULL,
-    CHECK ((teacher_id IS NOT NULL) <> (student_id IS NOT NULL))
+    expires_at timestamptz NOT NULL
 );
 
 CREATE TABLE submissions (
@@ -162,8 +157,8 @@ CREATE INDEX exams_teacher_idx ON exams (teacher_id);
 CREATE INDEX test_cases_problem_idx ON test_cases (problem_id, id);
 CREATE INDEX exam_sessions_exam_idx ON exam_sessions (exam_id);
 CREATE INDEX participants_student_idx ON exam_participants (student_id, exam_session_id);
-CREATE INDEX refresh_tokens_teacher_idx ON refresh_tokens (teacher_id) WHERE teacher_id IS NOT NULL;
-CREATE INDEX refresh_tokens_student_idx ON refresh_tokens (student_id) WHERE student_id IS NOT NULL;
+CREATE INDEX users_role_code_idx ON users (role, code);
+CREATE INDEX refresh_tokens_user_idx ON refresh_tokens (user_id);
 CREATE INDEX refresh_tokens_expiry_idx ON refresh_tokens (expires_at);
 CREATE INDEX submissions_participant_history_idx
     ON submissions (exam_participant_id, received_at DESC, id DESC);

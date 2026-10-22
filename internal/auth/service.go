@@ -18,15 +18,16 @@ import (
 // state lock the account row first, then the refresh token
 // (lock order account -> refresh_token, BACKEND_CONTEXT.md §10).
 type Repository interface {
-	// GetAccountByCode returns ErrNotFound if no account of that role has code.
-	GetAccountByCode(ctx context.Context, role Role, code string) (Account, error)
+	// GetAccountByCode returns ErrNotFound if no user has code. The role comes
+	// from the users row (one table for teachers and students).
+	GetAccountByCode(ctx context.Context, code string) (Account, error)
 	// GetAccountByID returns ErrNotFound if the account does not exist.
-	GetAccountByID(ctx context.Context, role Role, id int64) (Account, error)
+	GetAccountByID(ctx context.Context, id int64) (Account, error)
 
 	// IssueRefreshToken stores tokenHash for the account, but only if its
 	// password hash still equals expectedPasswordHash under the account lock;
 	// otherwise it returns ErrInvalidCredentials.
-	IssueRefreshToken(ctx context.Context, role Role, accountID int64, expectedPasswordHash string, tokenHash []byte, expiresAt time.Time) error
+	IssueRefreshToken(ctx context.Context, accountID int64, expectedPasswordHash string, tokenHash []byte, expiresAt time.Time) error
 
 	// RotateRefreshToken atomically replaces oldHash with newHash and returns
 	// the owning account. It returns ErrInvalidRefreshToken if oldHash does not
@@ -39,9 +40,9 @@ type Repository interface {
 	// ChangePassword sets newPasswordHash and deletes every refresh token of
 	// the account, if the stored hash still equals expectedPasswordHash;
 	// otherwise it returns ErrInvalidCredentials.
-	ChangePassword(ctx context.Context, role Role, accountID int64, expectedPasswordHash, newPasswordHash string) error
+	ChangePassword(ctx context.Context, accountID int64, expectedPasswordHash, newPasswordHash string) error
 
-	// CreateTeacher returns ErrAlreadyExists if the code is taken.
+	// CreateTeacher returns ErrAlreadyExists if the code is taken by any user.
 	CreateTeacher(ctx context.Context, code, fullname, passwordHash string) (Account, error)
 }
 
@@ -83,16 +84,15 @@ func NewService(repo Repository, signer *JWTSigner, refreshTTL time.Duration, op
 	return s
 }
 
-func (s *Service) Login(ctx context.Context, role Role, code, password string) (Tokens, Account, error) {
-	if !role.Valid() {
-		return Tokens{}, Account{}, fmt.Errorf("%w: role must be teacher or student", ErrInvalidInput)
-	}
+// Login checks code + password; the account's role (and so the JWT role
+// claim) comes from the users row, not from the client.
+func (s *Service) Login(ctx context.Context, code, password string) (Tokens, Account, error) {
 	code = NormalizeCode(code)
 	if code == "" || password == "" {
 		return Tokens{}, Account{}, fmt.Errorf("%w: code and password are required", ErrInvalidInput)
 	}
 
-	acct, err := s.repo.GetAccountByCode(ctx, role, code)
+	acct, err := s.repo.GetAccountByCode(ctx, code)
 	if errors.Is(err, ErrNotFound) {
 		_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))
 		return Tokens{}, Account{}, ErrInvalidCredentials
@@ -110,7 +110,7 @@ func (s *Service) Login(ctx context.Context, role Role, code, password string) (
 		return Tokens{}, Account{}, err
 	}
 	refreshExp := now.Add(s.refreshTTL)
-	if err := s.repo.IssueRefreshToken(ctx, role, acct.ID, acct.PasswordHash, refreshHash, refreshExp); err != nil {
+	if err := s.repo.IssueRefreshToken(ctx, acct.ID, acct.PasswordHash, refreshHash, refreshExp); err != nil {
 		return Tokens{}, Account{}, err
 	}
 	tokens, err := s.tokens(acct, refresh, refreshExp, now)
@@ -145,14 +145,14 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *Service) Me(ctx context.Context, p Principal) (Account, error) {
-	return s.repo.GetAccountByID(ctx, p.Role, p.ID)
+	return s.repo.GetAccountByID(ctx, p.ID)
 }
 
 func (s *Service) ChangePassword(ctx context.Context, p Principal, current, next string) error {
 	if err := validatePassword(next); err != nil {
 		return err
 	}
-	acct, err := s.repo.GetAccountByID(ctx, p.Role, p.ID)
+	acct, err := s.repo.GetAccountByID(ctx, p.ID)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (s *Service) ChangePassword(ctx context.Context, p Principal, current, next
 	if err != nil {
 		return err
 	}
-	return s.repo.ChangePassword(ctx, p.Role, p.ID, acct.PasswordHash, newHash)
+	return s.repo.ChangePassword(ctx, p.ID, acct.PasswordHash, newHash)
 }
 
 // VerifyAccessToken implements TokenVerifier for the HTTP middleware.

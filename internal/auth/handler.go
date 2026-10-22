@@ -64,7 +64,6 @@ func toTokenResponse(t Tokens, a Account) tokenResponse {
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Role     Role   `json:"role"`
 		Code     string `json:"code"`
 		Password string `json:"password"`
 	}
@@ -72,7 +71,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	tokens, acct, err := h.svc.Login(r.Context(), req.Role, req.Code, req.Password)
+	tokens, acct, err := h.svc.Login(r.Context(), req.Code, req.Password)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -143,7 +142,7 @@ func (h *Handler) writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrInvalidInput):
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrInvalidCredentials):
-		httpx.Error(w, http.StatusUnauthorized, "invalid code, password or role")
+		httpx.Error(w, http.StatusUnauthorized, "invalid code or password")
 	case errors.Is(err, ErrInvalidRefreshToken):
 		httpx.Error(w, http.StatusUnauthorized, "invalid or expired refresh token")
 	case errors.Is(err, ErrNotFound):

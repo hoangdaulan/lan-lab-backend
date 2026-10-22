@@ -4,149 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
-
-// fakeRepo is an in-memory Repository with the same semantics as the pgx one.
-type fakeRepo struct {
-	mu       sync.Mutex
-	accounts map[Role]map[int64]*Account
-	tokens   map[string]fakeToken // key: string(hash)
-	nextID   int64
-}
-
-type fakeToken struct {
-	role      Role
-	accountID int64
-	expiresAt time.Time
-}
-
-func newFakeRepo() *fakeRepo {
-	return &fakeRepo{
-		accounts: map[Role]map[int64]*Account{RoleTeacher: {}, RoleStudent: {}},
-		tokens:   map[string]fakeToken{},
-	}
-}
-
-func (f *fakeRepo) add(t *testing.T, role Role, code, password string) Account {
-	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.nextID++
-	a := &Account{ID: f.nextID, Role: role, Code: code, Fullname: "Test " + code, PasswordHash: string(hash)}
-	f.accounts[role][a.ID] = a
-	return *a
-}
-
-func (f *fakeRepo) tokenCount(role Role, id int64) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, t := range f.tokens {
-		if t.role == role && t.accountID == id {
-			n++
-		}
-	}
-	return n
-}
-
-func (f *fakeRepo) GetAccountByCode(_ context.Context, role Role, code string) (Account, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, a := range f.accounts[role] {
-		if a.Code == code {
-			return *a, nil
-		}
-	}
-	return Account{}, ErrNotFound
-}
-
-func (f *fakeRepo) GetAccountByID(_ context.Context, role Role, id int64) (Account, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if a, ok := f.accounts[role][id]; ok {
-		return *a, nil
-	}
-	return Account{}, ErrNotFound
-}
-
-func (f *fakeRepo) IssueRefreshToken(_ context.Context, role Role, id int64, expected string, hash []byte, exp time.Time) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	a, ok := f.accounts[role][id]
-	if !ok || a.PasswordHash != expected {
-		return ErrInvalidCredentials
-	}
-	f.tokens[string(hash)] = fakeToken{role: role, accountID: id, expiresAt: exp}
-	return nil
-}
-
-func (f *fakeRepo) RotateRefreshToken(_ context.Context, oldHash, newHash []byte, newExp, now time.Time) (Account, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	t, ok := f.tokens[string(oldHash)]
-	if !ok {
-		return Account{}, ErrInvalidRefreshToken
-	}
-	delete(f.tokens, string(oldHash))
-	if !t.expiresAt.After(now) {
-		return Account{}, ErrInvalidRefreshToken
-	}
-	a, ok := f.accounts[t.role][t.accountID]
-	if !ok {
-		return Account{}, ErrInvalidRefreshToken
-	}
-	f.tokens[string(newHash)] = fakeToken{role: t.role, accountID: t.accountID, expiresAt: newExp}
-	return *a, nil
-}
-
-func (f *fakeRepo) DeleteRefreshToken(_ context.Context, hash []byte) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	delete(f.tokens, string(hash))
-	return nil
-}
-
-func (f *fakeRepo) ChangePassword(_ context.Context, role Role, id int64, expected, newHash string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	a, ok := f.accounts[role][id]
-	if !ok {
-		return ErrNotFound
-	}
-	if a.PasswordHash != expected {
-		return ErrInvalidCredentials
-	}
-	a.PasswordHash = newHash
-	for k, t := range f.tokens {
-		if t.role == role && t.accountID == id {
-			delete(f.tokens, k)
-		}
-	}
-	return nil
-}
-
-func (f *fakeRepo) CreateTeacher(_ context.Context, code, fullname, hash string) (Account, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, a := range f.accounts[RoleTeacher] {
-		if a.Code == code {
-			return Account{}, ErrAlreadyExists
-		}
-	}
-	f.nextID++
-	a := &Account{ID: f.nextID, Role: RoleTeacher, Code: code, Fullname: fullname, PasswordHash: hash}
-	f.accounts[RoleTeacher][a.ID] = a
-	return *a, nil
-}
 
 type testClock struct{ t time.Time }
 
@@ -168,7 +30,7 @@ func TestLoginSuccessIssuesValidTokens(t *testing.T) {
 	svc, clock := newTestService(repo)
 
 	// Code is normalized (trim + upper) before lookup.
-	tokens, acct, err := svc.Login(context.Background(), RoleStudent, "  b21dccn001 ", "B21DCCN001")
+	tokens, acct, err := svc.Login(context.Background(), "  b21dccn001 ", "B21DCCN001")
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -188,7 +50,7 @@ func TestLoginSuccessIssuesValidTokens(t *testing.T) {
 	if p != (Principal{ID: student.ID, Role: RoleStudent}) {
 		t.Errorf("principal = %+v", p)
 	}
-	if n := repo.tokenCount(RoleStudent, student.ID); n != 1 {
+	if n := repo.tokenCount(student.ID); n != 1 {
 		t.Errorf("stored refresh tokens = %d, want 1", n)
 	}
 }
@@ -198,41 +60,50 @@ func TestLoginWrongPassword(t *testing.T) {
 	student := repo.add(t, RoleStudent, "B21DCCN001", "B21DCCN001")
 	svc, _ := newTestService(repo)
 
-	_, _, err := svc.Login(context.Background(), RoleStudent, "B21DCCN001", "wrong")
+	_, _, err := svc.Login(context.Background(), "B21DCCN001", "wrong")
 	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
-	if n := repo.tokenCount(RoleStudent, student.ID); n != 0 {
+	if n := repo.tokenCount(student.ID); n != 0 {
 		t.Errorf("stored refresh tokens = %d, want 0", n)
 	}
 }
 
 func TestLoginUnknownCode(t *testing.T) {
 	svc, _ := newTestService(newFakeRepo())
-	_, _, err := svc.Login(context.Background(), RoleTeacher, "NOPE", "x")
+	_, _, err := svc.Login(context.Background(), "NOPE", "x")
 	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
 }
 
-func TestLoginRoleMismatch(t *testing.T) {
+func TestLoginRoleComesFromAccount(t *testing.T) {
 	repo := newFakeRepo()
 	repo.add(t, RoleStudent, "SV01", "pw")
+	repo.add(t, RoleTeacher, "GV01", "pw")
 	svc, _ := newTestService(repo)
 
-	// A student code and password presented with role=teacher must fail:
-	// codes are only unique per table.
-	_, _, err := svc.Login(context.Background(), RoleTeacher, "SV01", "pw")
-	if !errors.Is(err, ErrInvalidCredentials) {
-		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+	for code, want := range map[string]Role{"SV01": RoleStudent, "GV01": RoleTeacher} {
+		tokens, acct, err := svc.Login(context.Background(), code, "pw")
+		if err != nil {
+			t.Fatalf("Login(%s): %v", code, err)
+		}
+		if acct.Role != want {
+			t.Errorf("Login(%s) role = %s, want %s", code, acct.Role, want)
+		}
+		p, err := svc.VerifyAccessToken(tokens.AccessToken)
+		if err != nil || p.Role != want {
+			t.Errorf("Login(%s) JWT role = %s (%v), want %s", code, p.Role, err, want)
+		}
 	}
 }
 
-func TestLoginInvalidRole(t *testing.T) {
+func TestLoginMissingFields(t *testing.T) {
 	svc, _ := newTestService(newFakeRepo())
-	_, _, err := svc.Login(context.Background(), Role("admin"), "X", "y")
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("err = %v, want ErrInvalidInput", err)
+	for _, c := range [][2]string{{"", "pw"}, {"  ", "pw"}, {"SV01", ""}} {
+		if _, _, err := svc.Login(context.Background(), c[0], c[1]); !errors.Is(err, ErrInvalidInput) {
+			t.Errorf("Login(%q, %q) err = %v, want ErrInvalidInput", c[0], c[1], err)
+		}
 	}
 }
 
@@ -242,7 +113,7 @@ func TestRefreshRotatesAndOldTokenIsSingleUse(t *testing.T) {
 	svc, clock := newTestService(repo)
 	ctx := context.Background()
 
-	first, _, err := svc.Login(ctx, RoleTeacher, "GV01", "secret")
+	first, _, err := svc.Login(ctx, "GV01", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +129,7 @@ func TestRefreshRotatesAndOldTokenIsSingleUse(t *testing.T) {
 	if second.RefreshToken == first.RefreshToken {
 		t.Error("refresh token was not rotated")
 	}
-	if n := repo.tokenCount(RoleTeacher, teacher.ID); n != 1 {
+	if n := repo.tokenCount(teacher.ID); n != 1 {
 		t.Errorf("stored refresh tokens = %d, want 1 (old replaced)", n)
 	}
 
@@ -278,7 +149,7 @@ func TestRefreshExpired(t *testing.T) {
 	svc, clock := newTestService(repo)
 	ctx := context.Background()
 
-	tokens, _, err := svc.Login(ctx, RoleStudent, "SV01", "pw")
+	tokens, _, err := svc.Login(ctx, "SV01", "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +174,7 @@ func TestLogoutRevokesRefreshToken(t *testing.T) {
 	svc, _ := newTestService(repo)
 	ctx := context.Background()
 
-	tokens, _, err := svc.Login(ctx, RoleStudent, "SV01", "pw")
+	tokens, _, err := svc.Login(ctx, "SV01", "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,8 +193,8 @@ func TestChangePasswordRevokesAllRefreshTokens(t *testing.T) {
 	ctx := context.Background()
 	p := Principal{ID: student.ID, Role: RoleStudent}
 
-	a, _, _ := svc.Login(ctx, RoleStudent, "SV01", "old")
-	b, _, _ := svc.Login(ctx, RoleStudent, "SV01", "old")
+	a, _, _ := svc.Login(ctx, "SV01", "old")
+	b, _, _ := svc.Login(ctx, "SV01", "old")
 
 	if err := svc.ChangePassword(ctx, p, "wrong", "new"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong current password err = %v, want ErrInvalidCredentials", err)
@@ -336,10 +207,10 @@ func TestChangePasswordRevokesAllRefreshTokens(t *testing.T) {
 			t.Errorf("refresh after password change err = %v, want ErrInvalidRefreshToken", err)
 		}
 	}
-	if _, _, err := svc.Login(ctx, RoleStudent, "SV01", "old"); !errors.Is(err, ErrInvalidCredentials) {
+	if _, _, err := svc.Login(ctx, "SV01", "old"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("login with old password err = %v", err)
 	}
-	if _, _, err := svc.Login(ctx, RoleStudent, "SV01", "new"); err != nil {
+	if _, _, err := svc.Login(ctx, "SV01", "new"); err != nil {
 		t.Errorf("login with new password: %v", err)
 	}
 }
@@ -360,7 +231,7 @@ func TestAccessTokenExpiresAndRejectsTampering(t *testing.T) {
 	repo.add(t, RoleStudent, "SV01", "pw")
 	svc, clock := newTestService(repo)
 
-	tokens, _, err := svc.Login(context.Background(), RoleStudent, "SV01", "pw")
+	tokens, _, err := svc.Login(context.Background(), "SV01", "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +254,16 @@ func TestCreateTeacherIdempotent(t *testing.T) {
 	if _, err := svc.CreateTeacher(ctx, "GV01", "Teacher", "pw"); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("second CreateTeacher err = %v, want ErrAlreadyExists", err)
 	}
-	if _, _, err := svc.Login(ctx, RoleTeacher, "gv01", "pw"); err != nil {
+	if _, _, err := svc.Login(ctx, "gv01", "pw"); err != nil {
 		t.Fatalf("login seeded teacher: %v", err)
+	}
+}
+
+func TestCreateTeacherRejectsStudentCode(t *testing.T) {
+	repo := newFakeRepo()
+	repo.add(t, RoleStudent, "SV01", "pw")
+	svc, _ := newTestService(repo)
+	if _, err := svc.CreateTeacher(context.Background(), "SV01", "Teacher", "pw"); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("err = %v, want ErrAlreadyExists (codes are unique across roles)", err)
 	}
 }
