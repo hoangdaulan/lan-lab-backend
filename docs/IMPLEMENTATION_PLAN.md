@@ -23,7 +23,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 3 | Auth (JWT, refresh token) | ✅ xong |
 | 4 | Quản lý sinh viên | ✅ xong |
 | 5 | Đề, phiên, tham gia | ✅ xong |
-| 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | kiểm chứng |
+| 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong (xếp hàng chấm lại ở phase 10) |
 | 7 | Nộp bài | chưa làm |
 | 8 | Hàng đợi chấm bền vững | chưa làm |
 | 9 | Sandbox chấm C++17 | chưa làm |
@@ -230,15 +230,15 @@ scripts/smoke.sh exams
 - `GET /sessions/{id}/problems/{pid}` cho SV: chỉ từ `starts_at` và đã join.
 
 **Checklist**
-- [ ] Unit test pass (gồm quét thư mục, symlink)
-- [ ] Tạo problem tạo thư mục test trên host, đúng chủ sở hữu
-- [ ] Trùng mã trong đề → 409; giới hạn ngoài 1–10000 ms / 1–1024 MB → 400
-- [ ] Chấm lại khi chưa có test / thiếu cặp → 409, version không đổi
-- [ ] Chấm lại hợp lệ → version + 1, test theo thứ tự số
-- [ ] Sửa chữ không tăng version; đổi limit tăng version
-- [ ] SV xem đề: chưa join 403, trước giờ 403, problem khác đề 404, sau khi join 200
-- [ ] Xóa problem chưa có bài nộp → 204, file test giữ nguyên
-- [ ] Phần tạo lại run/job khi tăng version: chuyển sang phase 10 (hiện là stub)
+- [x] Unit test pass (gồm quét thư mục, symlink) — 22/10: `go test -race ./internal/problem/` ok (7 test, `TestScanTestsErrors` chặn symlink)
+- [x] Tạo problem tạo thư mục test trên host, đúng chủ sở hữu — 22/10: `./data/problems/<id>/tests` thuộc `toan` (UID 1000 = `APP_UID`), ghi được
+- [x] Trùng mã trong đề → 409; giới hạn ngoài 1–10000 ms / 1–1024 MB → 400 — 22/10: `scripts/smoke.sh problems` 17/17
+- [x] Chấm lại khi chưa có test / thiếu cặp → 409, version không đổi — 22/10: smoke 409 hai lần rồi lần hợp lệ ra version 2 (không tăng khi lỗi); unit test kiểm version = 1 sau lỗi
+- [x] Chấm lại hợp lệ → version + 1, test theo thứ tự số — 22/10: `1, 2, 10` (file `2.in` rỗng hợp lệ)
+- [x] Sửa chữ không tăng version; đổi limit tăng version — 22/10: `scripts/smoke.sh problems` 17/17
+- [x] SV xem đề: chưa join 403, trước giờ 403, problem khác đề 404, sau khi join 200 — 22/10: `scripts/smoke.sh problems` 17/17
+- [x] Xóa problem chưa có bài nộp → 204, file test giữ nguyên — 22/10: 204, GET sau đó 404, thư mục `./data/problems/<id>` vẫn còn
+- [ ] Phần tạo lại run/job khi tăng version: chuyển sang phase 10 (hiện là stub `requeueProblem`; API vẫn trả `rejudge_queued: true`)
 
 **Kiểm tra cuối phase**
 ```bash
