@@ -46,7 +46,7 @@ Content-Type: text/csv; charset=utf-8
 --StudentImportBoundary--
 
 ### 6. Danh sach SV: 200
-GET {{base}}/students?q=TESTSV&limit=50&offset=0
+GET {{base}}/students?query=TESTSV&page=1&pageSize=20
 Authorization: Bearer {{teacherToken}}
 
 ### 7. Tao de: 201. Copy id tu response vao examId

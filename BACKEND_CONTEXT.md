@@ -401,3 +401,11 @@ Người dùng trả lời các đề xuất của agent:
 - **Bỏ sqlc:** xóa `sqlc.yaml`, `queries/`, target `make sqlc`; repository viết tay bằng pgx.
 - **Hàng đợi (triển khai phase 8):** snapshot test/giới hạn/version đọc trong transaction claim; không giữ khóa khi chép file vì test được sửa trực tiếp trên đĩa — tính đúng dựa vào kiểm tra version + lease khi ghi kết quả (thay ý "giữ khóa SHARE problem trong lúc copy" ở chú thích SQL mục 4). Thời gian hàng đợi dùng `clock_timestamp()` của DB. Biến môi trường mới `WORKER_LEASE` (mặc định 60s, tối thiểu 3s).
 - **Chấm lại (triển khai phase 10):** đổi limit hoặc bấm "Chấm lại" problem → trong transaction khóa problem, mọi run/job không `obsolete` của problem (kể cả run `completed` version cũ) chuyển `obsolete`, tạo run + job mới version mới cho mọi bài nộp ở mọi phiên. Chấm lại thủ công một bài (`POST /submissions/{id}/rejudge`) làm tương tự cho riêng bài đó, cùng version. Migration `00001` đã đổi `UNIQUE (submission_id, problem_version)` thành `judge_runs_current_idx`; DB dev được `ALTER` tại chỗ (không xóa dữ liệu) cho khớp.
+
+## Cập nhật: định dạng danh sách tương thích Mesgo
+
+Người dùng yêu cầu đổi các API danh sách sang `PagedList<T>` của Mesgo: `data`, `page`, `pageSize`, `totalPages` (camelCase). Request dùng `page` từ 1, `pageSize` mặc định 20/tối đa 200; sinh viên dùng `query` thay `q`. Dữ liệu rỗng trả `data: []`, `totalPages: 0`; trang vượt cuối trả array rỗng. Các metadata riêng giữ cùng cấp với PagedList. Không bọc lại response chi tiết hoặc các array trong kết quả import/rejudge. Chi tiết endpoint xem `docs/api-v1.md` và Swagger. Không cần thay schema/migration.
+
+## Cập nhật: chi tiết đề có danh sách problem
+
+Người dùng đã duyệt bổ sung `problems: [{id, code, title}]` vào `GET /api/v1/exams/{id}`. Danh sách đầy đủ sắp theo `code` rồi `id`; rỗng trả `[]`, không bọc PagedList vì nằm trong response chi tiết. Giữ kiểm tra quyền giáo viên sở hữu đề. Response danh sách/tạo/sửa đề không thay đổi theo cập nhật này.

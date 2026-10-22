@@ -2,10 +2,11 @@ swagger: '2.0'
 info:
   title: LAN Auto-Grader API
   version: 1.0.0
-  description: API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer <access_token>. Đổi
-    token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test. Bài nộp được worker chấm thật (g++ C++17
-    trong sandbox); kết quả dạng passed/total + verdict, dừng ở test sai đầu tiên. Chấm lại problem hoặc
-    từng bài đã hoạt động. WebSocket chưa có.
+  description: API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer
+    <access_token>. Đổi token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test.
+    Bài nộp được worker chấm thật (g++ C++17 trong sandbox); kết quả dạng passed/total
+    + verdict, dừng ở test sai đầu tiên. Chấm lại problem hoặc từng bài đã hoạt động.
+    WebSocket chưa có.
 basePath: /
 produces:
 - application/json
@@ -14,8 +15,8 @@ securityDefinitions:
     type: apiKey
     in: header
     name: Authorization
-    description: 'Nhập cả tiền tố: Bearer <access_token>. Token giáo viên dùng cho quản lý, token sinh
-      viên dùng join/finish.'
+    description: 'Nhập cả tiền tố: Bearer <access_token>. Token giáo viên dùng cho
+      quản lý, token sinh viên dùng join/finish.'
 security:
 - BearerAuth: []
 paths:
@@ -55,8 +56,9 @@ paths:
       tags:
       - Auth
       summary: Đăng nhập
-      description: Body chỉ gồm code và password; vai trò (teacher/student) lấy từ tài khoản trong DB
-        và trả về trong user.role + claim role của JWT. Gửi thêm trường role sẽ bị 400.
+      description: Body chỉ gồm code và password; vai trò (teacher/student) lấy từ
+        tài khoản trong DB và trả về trong user.role + claim role của JWT. Gửi thêm
+        trường role sẽ bị 400.
       operationId: post__api_v1_auth_login
       parameters:
       - name: body
@@ -246,20 +248,50 @@ paths:
       summary: Tìm và liệt kê sinh viên
       operationId: get__api_v1_students
       parameters:
-      - name: q
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
+      - name: query
         in: query
         type: string
-      - name: limit
-        in: query
-        type: integer
-        default: 50
-      - name: offset
-        in: query
-        type: integer
-        default: 0
+        description: Tìm chuỗi con trong code/fullname.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/definitions/Student'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -329,8 +361,8 @@ paths:
         in: formData
         required: true
         type: file
-        description: 'CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã có sẽ bỏ qua; dữ liệu
-          mẫu: TESTSV001,Nguyễn Văn An.'
+        description: 'CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã
+          có sẽ bỏ qua; dữ liệu mẫu: TESTSV001,Nguyễn Văn An.'
       responses:
         '200':
           description: Thành công
@@ -399,10 +431,47 @@ paths:
       - Đề và phiên (GV)
       summary: Danh sách đề
       operationId: get__api_v1_exams
-      parameters: []
+      parameters:
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/definitions/Exam'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -479,7 +548,7 @@ paths:
         '200':
           description: Thành công
           schema:
-            $ref: '#/definitions/Exam'
+            $ref: '#/definitions/ExamDetail'
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -595,9 +664,46 @@ paths:
         format: int64
         minimum: 1
         description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/definitions/Session'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -795,9 +901,46 @@ paths:
         format: int64
         minimum: 1
         description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/definitions/Participant'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -824,10 +967,56 @@ paths:
       - Làm bài (SV)
       summary: Danh sách phiên và trạng thái tham gia
       operationId: get__api_v1_me_sessions
-      parameters: []
+      parameters:
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  allOf:
+                  - $ref: '#/definitions/Session'
+                  - type: object
+                    properties:
+                      participation:
+                        $ref: '#/definitions/Participant'
+                        x-nullable: true
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
+              server_time:
+                type: string
+                format: date-time
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -970,7 +1159,8 @@ paths:
           description: Xung đột trạng thái hoặc dữ liệu
           schema:
             $ref: '#/definitions/Error'
-      description: Code hiện tại vẫn cho xem statement sau finished; đây là điểm đã được nêu trong review.
+      description: Code hiện tại vẫn cho xem statement sau finished; đây là điểm đã
+        được nêu trong review.
   /api/v1/exams/{id}/problems:
     get:
       tags:
@@ -985,9 +1175,46 @@ paths:
         format: int64
         minimum: 1
         description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/definitions/Problem'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -1135,8 +1362,8 @@ paths:
             $ref: '#/definitions/Error'
       consumes:
       - application/json
-      description: Cập nhật toàn bộ. Đổi time_limit_ms hoặc memory_limit_mb → version + 1 và chấm lại
-        mọi bài nộp (rejudge_queued, requeued_submissions).
+      description: Cập nhật toàn bộ. Đổi time_limit_ms hoặc memory_limit_mb → version
+        + 1 và chấm lại mọi bài nộp (rejudge_queued, requeued_submissions).
     delete:
       tags:
       - Problem (GV)
@@ -1187,9 +1414,56 @@ paths:
         format: int64
         minimum: 1
         description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
+          schema:
+            type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      format: int64
+                    input:
+                      type: string
+                    output:
+                      type: string
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
+              test_dir:
+                type: string
         '400':
           description: Dữ liệu không hợp lệ
           schema:
@@ -1247,17 +1521,18 @@ paths:
           description: Xung đột trạng thái hoặc dữ liệu
           schema:
             $ref: '#/definitions/Error'
-      description: Quét thư mục test trên server (N.in/N.out), thay test_cases, tăng version, và tạo run
-        + job mới cho MỌI bài nộp của problem ở mọi phiên (run cũ chuyển obsolete). Response có requeued_submissions.
+      description: Quét thư mục test trên server (N.in/N.out), thay test_cases, tăng
+        version, và tạo run + job mới cho MỌI bài nộp của problem ở mọi phiên (run
+        cũ chuyển obsolete). Response có requeued_submissions.
   /api/v1/sessions/{id}/problems/{pid}/submissions:
     post:
       tags:
       - Nộp bài (SV)
       summary: Nộp một file .cpp
       operationId: post__api_v1_sessions_id_problems_pid_submissions
-      description: Chỉ nhận đuôi .cpp, 1 byte – 64 KB. received_at do server ghi khi nhận đủ file; phải
-        đã join phiên, chưa finish, starts_at <= received_at < ends_at, problem đã có test. Trả 202 khi
-        submission + run + job đã commit.
+      description: Chỉ nhận đuôi .cpp, 1 byte – 64 KB. received_at do server ghi khi
+        nhận đủ file; phải đã join phiên, chưa finish, starts_at <= received_at <
+        ends_at, problem đã có test. Trả 202 khi submission + run + job đã commit.
       consumes:
       - multipart/form-data
       parameters:
@@ -1315,8 +1590,8 @@ paths:
       - Nộp bài (GV/SV)
       summary: Danh sách bài nộp của phiên
       operationId: get__api_v1_sessions_id_submissions
-      description: SV chỉ thấy bài của mình (student_id bị bỏ qua); GV sở hữu đề thấy mọi bài. Mới nhất
-        trước.
+      description: SV chỉ thấy bài của mình (student_id bị bỏ qua); GV sở hữu đề thấy
+        mọi bài. Mới nhất trước.
       parameters:
       - name: id
         in: path
@@ -1337,6 +1612,17 @@ paths:
         type: integer
         format: int64
         minimum: 1
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '400':
           description: Dữ liệu không hợp lệ
@@ -1359,22 +1645,41 @@ paths:
           schema:
             $ref: '#/definitions/Error'
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
           schema:
             type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
             properties:
-              items:
+              data:
                 type: array
                 items:
                   $ref: '#/definitions/Submission'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
   /api/v1/submissions/{id}:
     get:
       tags:
       - Nộp bài (GV/SV)
       summary: Chi tiết bài nộp và kết quả hiện hành
       operationId: get__api_v1_submissions_id
-      description: Kết quả hiện hành = run có problem_version bằng version hiện tại của problem; null
-        khi đang chờ chấm lại. system_error chỉ hiện cho GV.
+      description: Kết quả hiện hành = run có problem_version bằng version hiện tại
+        của problem; null khi đang chờ chấm lại. system_error chỉ hiện cho GV.
       parameters:
       - name: id
         in: path
@@ -1463,6 +1768,17 @@ paths:
         format: int64
         minimum: 1
         description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: page
+        in: query
+        type: integer
+        minimum: 1
+        default: 1
+      - name: pageSize
+        in: query
+        type: integer
+        minimum: 1
+        default: 20
+        description: Tối đa 200; giá trị lớn hơn được giới hạn về 200.
       responses:
         '400':
           description: Dữ liệu không hợp lệ
@@ -1485,24 +1801,44 @@ paths:
           schema:
             $ref: '#/definitions/Error'
         '200':
-          description: Thành công
+          description: PagedList tương thích Mesgo; data luôn là array, không có dữ
+            liệu thì totalPages = 0.
           schema:
             type: object
+            required:
+            - data
+            - page
+            - pageSize
+            - totalPages
             properties:
-              submission:
-                $ref: '#/definitions/Submission'
-              items:
+              data:
                 type: array
                 items:
                   $ref: '#/definitions/TestResult'
+              page:
+                type: integer
+                minimum: 1
+                example: 1
+              pageSize:
+                type: integer
+                minimum: 1
+                maximum: 200
+                example: 20
+              totalPages:
+                type: integer
+                minimum: 0
+                example: 3
+              submission:
+                $ref: '#/definitions/Submission'
   /api/v1/submissions/{id}/rejudge:
     post:
       tags:
       - Nộp bài (GV)
       summary: Chấm lại thủ công một bài nộp
       operationId: post__api_v1_submissions_id_rejudge
-      description: Run hiện hành (và job) chuyển obsolete, tạo run + job mới ở version hiện tại của problem;
-        các bài khác không đổi. Trả 202 với kết quả đang chờ chấm.
+      description: Run hiện hành (và job) chuyển obsolete, tạo run + job mới ở version
+        hiện tại của problem; các bài khác không đổi. Trả 202 với kết quả đang chờ
+        chấm.
       parameters:
       - name: id
         in: path
@@ -1896,3 +2232,33 @@ definitions:
         type: integer
         format: int64
         x-nullable: true
+  ProblemSummary:
+    type: object
+    required:
+    - id
+    - code
+    - title
+    properties:
+      id:
+        type: integer
+        format: int64
+        example: 1
+      code:
+        type: string
+        example: A
+      title:
+        type: string
+        example: Tổng hai số
+  ExamDetail:
+    allOf:
+    - $ref: '#/definitions/Exam'
+    - type: object
+      required:
+      - problems
+      properties:
+        problems:
+          type: array
+          description: Tất cả problem của đề, sắp theo code rồi id; rỗng là []. Không
+            phân trang.
+          items:
+            $ref: '#/definitions/ProblemSummary'

@@ -19,6 +19,12 @@ type Exam struct {
 	UpdatedAt   time.Time
 }
 
+// ExamDetail includes the complete problem summary list for the owning teacher.
+type ExamDetail struct {
+	Exam
+	Problems []ProblemSummary
+}
+
 type Session struct {
 	ID        int64
 	ExamID    int64

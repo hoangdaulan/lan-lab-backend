@@ -87,7 +87,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	for _, p := range ps {
 		items = append(items, toResponse(p))
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
+	httpx.WritePagedList(w, r, items, nil)
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +180,7 @@ func (h *Handler) listTests(w http.ResponseWriter, r *http.Request) {
 	for _, t := range tests {
 		items = append(items, testCaseResponse{ID: t.ID, Input: t.InputPath, Output: t.OutputPath})
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"test_dir": TestDir(id), "items": items})
+	httpx.WritePagedList(w, r, items, map[string]any{"test_dir": TestDir(id)})
 }
 
 type testFileResponse struct {

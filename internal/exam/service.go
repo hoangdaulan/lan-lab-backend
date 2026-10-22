@@ -79,6 +79,20 @@ func (s *Service) OwnedExam(ctx context.Context, teacherID, examID int64) (Exam,
 	return e, nil
 }
 
+// ExamDetail checks ownership before reading the exam's problem summaries.
+// ListProblems returns them ordered by code, then id.
+func (s *Service) ExamDetail(ctx context.Context, teacherID, examID int64) (ExamDetail, error) {
+	e, err := s.OwnedExam(ctx, teacherID, examID)
+	if err != nil {
+		return ExamDetail{}, err
+	}
+	problems, err := s.repo.ListProblems(ctx, examID)
+	if err != nil {
+		return ExamDetail{}, err
+	}
+	return ExamDetail{Exam: e, Problems: problems}, nil
+}
+
 func (s *Service) UpdateExam(ctx context.Context, teacherID, examID int64, title, description string) (Exam, error) {
 	if _, err := s.OwnedExam(ctx, teacherID, examID); err != nil {
 		return Exam{}, err
