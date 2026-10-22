@@ -395,3 +395,4 @@ Người dùng trả lời các đề xuất của agent:
 - **Giữ nguyên** các lựa chọn agent ở mục 17–18.
 - **Bàn giao:** theo `Submission.md` (thư mục `NhomXX_TenProject/{Source,Report}`, USB qua lớp trưởng), giữ thêm bản Google Drive.
 - **Bỏ sqlc:** xóa `sqlc.yaml`, `queries/`, target `make sqlc`; repository viết tay bằng pgx.
+- **Hàng đợi (triển khai phase 8):** snapshot test/giới hạn/version đọc trong transaction claim; không giữ khóa khi chép file vì test được sửa trực tiếp trên đĩa — tính đúng dựa vào kiểm tra version + lease khi ghi kết quả (thay ý "giữ khóa SHARE problem trong lúc copy" ở chú thích SQL mục 4). Thời gian hàng đợi dùng `clock_timestamp()` của DB. Biến môi trường mới `WORKER_LEASE` (mặc định 60s, tối thiểu 3s).

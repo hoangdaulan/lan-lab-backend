@@ -41,7 +41,10 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	svc := judge.NewService(judge.NewRepository(pool))
+	// The sandbox is not chosen yet (BACKEND_CONTEXT.md §19): with
+	// DisabledJudger the worker only recovers expired leases and leaves
+	// queued jobs alone.
+	svc := judge.NewService(judge.NewRepository(pool), judge.DisabledJudger{}, judge.DefaultRetry, cfg.WorkerLease)
 	w := judge.NewWorker(svc, cfg.WorkerID, cfg.WorkerConcurrency, cfg.WorkerPollInterval, log)
 	return w.Run(ctx)
 }

@@ -25,7 +25,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 5 | Đề, phiên, tham gia | ✅ xong |
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | ✅ xong (xếp hàng chấm lại ở phase 10) |
 | 7 | Nộp bài | ✅ xong |
-| 8 | Hàng đợi chấm bền vững | chưa làm |
+| 8 | Hàng đợi chấm bền vững | ✅ xong (chờ sandbox để chấm thật) |
 | 9 | Sandbox chấm C++17 | chưa làm |
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | chưa làm |
 | 11 | WebSocket trạng thái chấm | chưa làm |
@@ -293,16 +293,22 @@ scripts/smoke.sh submissions
 - `WORKER_CONCURRENCY` giới hạn số bài chấm đồng thời mỗi worker.
 
 **Checklist**
-- [ ] Test tích hợp với PostgreSQL thật: 2 worker × 20 job → mỗi job chấm đúng một lần
-- [ ] Giết worker giữa chừng → sau lease hết hạn job được chấm lại, không trùng kết quả
-- [ ] Job của version cũ hoàn tất muộn → bị loại, không ghi đè
-- [ ] Lỗi hạ tầng lặp lại → `system_error` sau N lần, không thành WA/RE
-- [ ] Thứ tự khóa đúng mục 10 (rà soát code + test deadlock song song với chấm lại)
-- [ ] Log có `worker_id`, `job_id`, thời gian chờ hàng đợi
+- [x] Test tích hợp với PostgreSQL thật: 2 worker × 20 job → mỗi job chấm đúng một lần — 22/10: `make test-integration` (PostgreSQL thật, mỗi test tạo/xóa DB riêng): `TestTwoWorkersJudgeEachJobExactlyOnce` — 20 run chấm đúng 1 lần, 20 job `done` attempt 1, lease đã xóa, 40 dòng kết quả
+- [x] Giết worker giữa chừng → sau lease hết hạn job được chấm lại, không trùng kết quả — 22/10: `TestExpiredLeaseRecoveredAndOldWorkerDropped`: heartbeat sau hạn → `ErrLeaseLost`; recovery đưa job về `queued` (`last_error` = lease expired); worker mới attempt 2 ghi 2 dòng; worker cũ `Complete` → `ErrLeaseLost`, không ghi gì. Kiểm tra đột biến: bỏ so khớp `lease_token` → test fail
+- [x] Job của version cũ hoàn tất muộn → bị loại, không ghi đè — 22/10: `TestStaleVersionResultDropped`: tăng version giữa chừng → `ErrStale`, run/job `obsolete`, 0 dòng kết quả; job version cũ còn trong hàng đợi bị obsolete khi claim, không chấm
+- [x] Lỗi hạ tầng lặp lại → `system_error` sau N lần, không thành WA/RE — 22/10: `TestInfrastructureFailuresBecomeSystemError`: 3 lần gọi judge, run `system_error` verdict NULL, job `failed` attempt 3; `TestBackoffDelaysRetry`: job không được claim lại trước `available_at`
+- [x] Thứ tự khóa đúng mục 10 (rà soát code + test deadlock song song với chấm lại) — 22/10: mọi transaction trong `internal/judge/repository.go` khóa problem (SHARE) → run → job; `TestNoDeadlockWithConcurrentRejudge`: 3 worker + 115 lần chấm lại giả lập trong 4 s, 0 deadlock (40P01), không có run `completed` ở version cũ
+- [x] Log có `worker_id`, `job_id`, thời gian chờ hàng đợi — 22/10: rà soát code `Worker.ProcessOne` (`worker_id`, `job_id`, `run_id`, `submission_id`, `attempt`, `queue_wait_ms`, `judge_ms`); log runtime thật sẽ thấy khi có sandbox (phase 9). Worker hiện log `judging=false` và để job ở `queued`
+
+**Ghi chú triển khai**
+- Snapshot (source, test, giới hạn, version) đọc trong transaction claim. Vì test được sửa trực tiếp trên đĩa rồi bấm "Chấm lại" (mục 17), việc giữ khóa SHARE khi chép file không còn bảo vệ được gì; tính đúng dựa vào kiểm tra version lúc `Complete`.
+- Mọi mốc thời gian của hàng đợi lấy từ `clock_timestamp()` của DB (một đồng hồ chung cho mọi worker).
+- Chưa có sandbox: `cmd/worker` dùng `DisabledJudger` → không claim job, chỉ chạy phục hồi lease.
 
 **Kiểm tra cuối phase**
 ```bash
-go test -race -count=1 -tags=integration ./internal/judge/
+go test -race -count=1 ./internal/judge/
+make test-integration
 ```
 
 ---
