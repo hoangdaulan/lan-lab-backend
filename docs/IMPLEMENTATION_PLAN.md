@@ -462,18 +462,37 @@ scripts/smoke.sh summary
 
 ## Câu hỏi cần chốt
 
-Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai:
+Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai. Mỗi câu có **Đề xuất** của agent (ngày 22/10/2026) — **chưa được duyệt**; khi người dùng chốt, ghi "Đã chốt" + ngày vào câu đó và vào `BACKEND_CONTEXT.md`.
 
-1. **Chọn verdict tổng** khi một bài có nhiều loại lỗi (ví dụ test 2 WA, test 5 TLE): lấy lỗi đầu tiên theo thứ tự test, hay theo độ ưu tiên (CE > RE > TLE > MLE > WA)? Có dừng sau test sai đầu tiên không (ảnh hưởng `passed_tests`)?
-2. **Cờ biên dịch** chính thức (`-O2`? `-static`? `-DONLINE_JUDGE`?) và giới hạn thời gian/bộ nhớ khi biên dịch.
-3. **Sandbox**: dùng `setrlimit` + network namespace (`unshare`) trong container worker (cần capability), hay công cụ có sẵn (nsjail/isolate — cần tải về, có thể bị chặn)?
-4. **Số worker, `WORKER_CONCURRENCY`, thời hạn lease, số lần retry, backoff** — chưa có số đo.
-5. **Chấm lại thủ công một bài**: dùng lại run hiện hành (reset) hay obsolete + run mới (ràng buộc `UNIQUE(submission_id, problem_version)` chặn run mới cùng version)?
-6. **Nguồn sự kiện WebSocket**: PostgreSQL `LISTEN/NOTIFY` hay API polling DB định kỳ?
-7. **Kiểm tra mã nguồn khi nộp**: bắt buộc UTF-8? Chặn ký tự NUL? Chấp nhận đuôi khác `.cpp`?
-8. **Rate limit**: ngưỡng login sai và số lần nộp mỗi phút (doc: không giới hạn tổng số lần nộp).
-9. ~~Swagger UI + cổng Postgres `127.0.0.1:5433`~~ — đã chốt 22/10/2026: commit riêng (`88b294e`), login trong spec đã bỏ `role`; giữ đồng bộ theo quy tắc phase 0.
-10. **Chống gian lận** (phase 13): làm mục nào trong danh sách đề xuất, hay giữ nguyên phạm vi "ngoài bản đầu"?
-11. **Giữ hay bỏ lớp học**: CSV có cột `class` nhưng bảng `users` không có — có cần thêm cột/bảng lớp?
-12. **Xác nhận các lựa chọn của agent** ở `BACKEND_CONTEXT.md` mục 17 (ghi chú triển khai) và 18: SV phải join mới xem đề; GV chỉ thấy đề của mình; xóa đề khi còn con bị chặn; giới hạn nhập time/memory.
-13. **Bàn giao**: Google Drive hay USB (doc ghi cả hai, cần hỏi giảng viên).
+### Chặn phase 7–9
+
+1. **Chọn verdict tổng** khi một bài có nhiều loại lỗi; có dừng sau test sai đầu tiên không?
+   - **Đề xuất (chưa duyệt):** chạy **hết** mọi test (để có `passed_tests/total_tests` cho phúc khảo); verdict tổng = verdict của **test sai đầu tiên theo thứ tự test** (thứ tự `test_cases.id`). CE xét ở cấp run trước khi chạy test. Lý do: dễ giải thích cho SV, đúng với "đối chiếu số test đúng/tổng test" ở mục 6.
+2. **Cờ biên dịch** và giới hạn khi biên dịch.
+   - **Đề xuất (chưa duyệt):** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch **10 giây**. `-static` để chương trình không phụ thuộc thư viện động khi chạy trong môi trường hạn chế; `ONLINE_JUDGE` theo thói quen của các hệ chấm. Compile output trả SV được cắt gọn (vd. 8 KB).
+3. **Sandbox**.
+   - **Đề xuất (chưa duyệt):** không dùng nsjail/isolate (phải tải về). Chạy bài SV bằng `setrlimit` (CPU, AS, FSIZE, NPROC) + **uid riêng không đặc quyền** + `unshare -n` (namespace mạng rỗng, kể cả không tới được `postgres`); container worker cần `cap_add: [SYS_ADMIN]`. Tiến trình con bỏ mọi capability, bật `no_new_privs`, chạy trong thư mục tạm riêng của job. Rủi ro: `SYS_ADMIN` là quyền rộng cho tiến trình worker — chấp nhận vì chỉ chạy trong LAN, worker không ra Internet; kiểm chứng bằng bộ bài tấn công ở phase 9.
+4. **Kiểm tra file nộp**.
+   - **Đề xuất (chưa duyệt):** chỉ nhận tên file đuôi **`.cpp`**, **≤ 64 KB**, không rỗng; **không** bắt buộc UTF-8 (tránh từ chối bài có chú thích tiếng Việt mã hóa khác). Server tự đặt tên khi lưu, không giữ tên gốc (mục 7).
+5. **Retry, backoff, lease, số worker**.
+   - **Đề xuất (chưa duyệt):** tối đa **3** lần thử cho lỗi hạ tầng, backoff **5 s / 30 s / 2 phút**; lease **60 s**, worker gia hạn (heartbeat) định kỳ khi đang chấm (vd. mỗi 20 s). `WORKER_CONCURRENCY` mặc định 2, chỉnh theo số đo phase 14.
+
+### Các phase sau
+
+6. **Chấm lại thủ công một bài** (`UNIQUE(submission_id, problem_version)` chặn tạo run mới cùng version).
+   - **Đề xuất (chưa duyệt):** tạo **run mới**, run cũ chuyển `obsolete` (giữ lịch sử). Cách làm: thay ràng buộc `UNIQUE (submission_id, problem_version)` bằng **unique index một phần** `ON judge_runs (submission_id, problem_version) WHERE status <> 'obsolete'` — vẫn bảo đảm tối đa một run hiện hành mỗi (bài, version). Sửa thẳng migration `00001` (chưa có dữ liệu thật) và mục 9 `BACKEND_CONTEXT.md` ("một run cho mỗi (submission, version)" → "một run **không obsolete**"). Run đang `judging` bị thay thì worker cũ mất quyền ghi theo kiểm tra lease/run hiện hành.
+7. **Nguồn sự kiện WebSocket**.
+   - **Đề xuất (chưa duyệt):** PostgreSQL **`LISTEN/NOTIFY`** (worker `NOTIFY run_updated, '<run_id>'` trong transaction ghi kết quả; API giữ một kết nối `LISTEN`, đọc lại run rồi phát), kèm **polling dự phòng** (vd. 5 s) khi mất kết nối LISTEN. Không cần thêm dịch vụ (Redis…).
+8. **Rate limit**.
+   - **Đề xuất (chưa duyệt):** nộp bài: **cooldown 10 s** mỗi SV (không giới hạn tổng số lần nộp — mục 6); đăng nhập: tối đa **10 lần sai / 5 phút** theo `code` + IP, quá thì 429. Lưu bộ đếm trong bộ nhớ API (một instance).
+9. ~~Swagger UI + cổng Postgres `127.0.0.1:5433`~~ — **Đã chốt 22/10/2026**: commit riêng (`88b294e`), login trong spec đã bỏ `role`; giữ đồng bộ theo quy tắc phase 0.
+10. **Chống gian lận** (phase 13).
+    - **Đề xuất (chưa duyệt):** chỉ làm phần `BACKEND_CONTEXT.md` cho phép mà không đổi phạm vi: (a) **một phiên đăng nhập SV hoạt động** — login mới xóa refresh token cũ của SV; (b) sau kỳ thi xuất source để GV tự so sánh bằng công cụ ngoài. Hai mục **theo dõi rời tab** và **báo cáo giống code** đang ghi "ngoài phạm vi bản đầu" ở mục 13 — chỉ làm nếu người dùng đổi quyết định đó (cần thêm bảng sự kiện + API FE gửi sự kiện, và một bước so sánh source).
+11. **Lớp học** (CSV có cột `class`, bảng `users` không có).
+    - **Đề xuất (chưa duyệt):** thêm cột **`class_name varchar(50) NULL`** vào `users` (sửa migration `00001`), import CSV lưu cột `class`, `GET /students` cho lọc theo lớp. Không tạo bảng lớp riêng (không có nghiệp vụ gắn lớp với đề/phiên).
+12. **Các lựa chọn agent tự đặt** ở `BACKEND_CONTEXT.md` mục 17 (ghi chú triển khai) và 18: SV phải join mới xem đề; GV chỉ thấy đề của mình; xóa đề khi còn con bị chặn; giới hạn nhập time/memory; mã trim + viết hoa.
+    - **Đề xuất (chưa duyệt):** **giữ nguyên** — đã có test và smoke test bao phủ.
+13. **Bàn giao** (`Instruction.md` ghi Google Drive, `Submission.md` ghi USB qua lớp trưởng).
+    - **Đề xuất (chưa duyệt):** làm theo **`Submission.md`** (văn bản cụ thể hơn, có hạn 31/10/2026): thư mục `NhomXX_TenProject/{Source,Report}`, báo cáo `.docx` qua Compilatio, source cho lớp trưởng chép USB; đồng thời giữ bản trên Google Drive phòng khi giảng viên yêu cầu theo `Instruction.md`.
+14. **sqlc** (Makefile + `sqlc.yaml` có, nhưng chưa dùng vì không tải được).
+    - **Đề xuất (chưa duyệt):** giữ repository pgx viết tay (đã có test + smoke), **bỏ** `sqlc.yaml`, `queries/` và target `make sqlc` để tài liệu khớp thực tế; nếu sau này cài được sqlc thì chuyển dần từng feature.
