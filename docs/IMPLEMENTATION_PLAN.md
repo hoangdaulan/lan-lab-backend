@@ -17,7 +17,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
-| 0 | Repo, công cụ, quy ước | ✅ xong (trừ sqlc) |
+| 0 | Repo, công cụ, quy ước | ✅ xong |
 | 1 | Docker Compose, cấu hình, biến môi trường | ✅ xong |
 | 2 | Schema DB, migration, gộp bảng `users` | ✅ xong |
 | 3 | Auth (JWT, refresh token) | ✅ xong |
@@ -30,7 +30,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | chưa làm |
 | 11 | WebSocket trạng thái chấm | chưa làm |
 | 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | chưa làm |
-| 13 | Chống gian lận trong phạm vi cho phép | chờ quyết định |
+| 13 | Chống gian lận | ❌ không làm (Đã chốt 22/10/2026) |
 | 14 | Gia cố, kiểm thử tải ~50 SV, quan sát | chưa làm |
 | 15 | Tài liệu, báo cáo, kịch bản demo | chưa làm |
 
@@ -43,7 +43,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 **Công việc**
 - Module Go `github.com/hoangdaulan/lan-lab-backend`, Go 1.26; thư viện đã chốt (mục 16): chi v5, pgx v5, goose v3, coder/websocket, golang-jwt v5, x/crypto (bcrypt).
 - Bố cục package-by-feature: `cmd/{api,worker,migrate,seed}`, `internal/{config,db,httpx,apperr,auth,student,exam,problem,submission,judge}`; mỗi feature `handler.go → service.go → repository.go`, interface `Repository` khai báo trong `service.go`.
-- Makefile: `up`, `down`, `migrate`, `seed`, `sqlc`, `build`, `test`.
+- Makefile: `up`, `down`, `migrate`, `seed`, `build`, `test`. Truy vấn DB viết tay bằng pgx (bỏ sqlc — Đã chốt 22/10/2026).
 - `.gitignore`: `.env`, `bin/`, `data/`. `.dockerignore`.
 - Script smoke test HTTP `scripts/smoke.sh`.
 - Swagger UI tại `/swagger/` (spec duy trì tay trong `docs/swagger.json` + `docs/swagger.yaml`, nhúng qua `docs/docs.go`), ví dụ tay `examples/api-manual.http`.
@@ -59,7 +59,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 - [x] Mỗi feature có `handler.go`, `service.go`, `repository.go`; `Repository` là interface trong `service.go` — 22/10: auth, student, exam, problem; `submission`, `judge` mới là stub
 - [x] Lỗi nghiệp vụ map HTTP tại một chỗ (`httpx.WriteError` + `apperr`) cho feature mới — 22/10: exam, problem dùng `apperr`; auth, student có `writeError` riêng (viết trước khi có `apperr`, giữ nguyên, hành vi đã test)
 - [x] `scripts/smoke.sh` tồn tại, chạy được với `bash -n` — 22/10: thêm mới ở phase này, `bash -n` OK
-- [ ] Truy vấn DB qua sqlc (`make sqlc`) — **chưa**: không tải được sqlc trong môi trường agent; repository viết tay bằng pgx. Cần người dùng `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest` nếu muốn chuyển
+- [x] ~~Truy vấn DB qua sqlc (`make sqlc`)~~ — bỏ (Đã chốt 22/10/2026, câu 14): xóa `sqlc.yaml`, `queries/`, target `make sqlc`; dùng pgx viết tay
 - [x] Swagger UI `/swagger/index.html` phục vụ được, spec hợp lệ, `swagger.json` ≡ `swagger.yaml` — 22/10: `go test ./internal/httpx/` ok (UI + doc.json, 32 thao tác); so sánh JSON/YAML bằng Python: bằng nhau. Kiểm tra qua HTTP thật ở phase 1 sau khi build lại image
 - [x] Swagger khớp `docs/api-v1.md` (đường dẫn + body login) — 22/10: 32 route ✅ trong doc = 32 trong spec, không lệch; login spec `{code,password}` (áp dụng sau phase 2)
 
@@ -257,7 +257,7 @@ scripts/smoke.sh problems
 - Transaction: khóa problem (SHARE) → session → participant `FOR UPDATE`; kiểm tra SV từ JWT là chủ participant, `status = in_progress`, problem thuộc đề của phiên, `starts_at <= received_at < ends_at`, bộ test không rỗng; tạo submission + run (version hiện hành) + job; COMMIT rồi mới trả 202.
 - DB lỗi: không báo nhận; file mồ côi dọn sau (job dọn định kỳ, có khoảng chờ).
 - `GET /sessions/{id}/submissions` (S: của mình; T: lọc), `GET /submissions/{id}`, `GET /submissions/{id}/source`, `GET /submissions/{id}/tests` (T).
-- Chặn: file > 64 KB, rỗng, không UTF-8 hợp lệ (cần chốt), sai đuôi.
+- Chặn (Đã chốt 22/10/2026, câu 4): tên file không đuôi `.cpp`, file > 64 KB, file rỗng. Không bắt buộc UTF-8.
 
 **Checklist**
 - [ ] Nộp hợp lệ → 202 + id; có đủ submission + run `queued` + job `queued` trong DB
@@ -287,7 +287,7 @@ scripts/smoke.sh submissions
 - Claim: đọc ứng viên `queued` không khóa; transaction ngắn khóa problem SHARE → run FOR UPDATE → job `FOR UPDATE SKIP LOCKED`; kiểm tra lại status/`available_at`/version; gán `running`, `worker_id`, `lease_token`, `lease_expires_at`, `attempt_count + 1`; run → `judging`, `started_at`.
 - Gia hạn lease định kỳ khi đang chấm; chỉ ghi kết quả khi token khớp, lease còn hạn, version còn hiện hành.
 - Phục hồi lease hết hạn (định kỳ + khi khởi động): job về `queued` hoặc `obsolete` nếu version cũ; reset kết quả lần trước.
-- Retry lỗi hạ tầng với backoff + số lần tối đa (cần chốt); hết lần → run `system_error`, job `failed`.
+- Retry lỗi hạ tầng tối đa 3 lần, backoff 5 s / 30 s / 2 phút; lease 60 s + heartbeat (Đã chốt 22/10/2026, câu 5); hết lần → run `system_error`, job `failed`.
 - Không giữ transaction trong lúc biên dịch/chạy.
 - `WORKER_CONCURRENCY` giới hạn số bài chấm đồng thời mỗi worker.
 
@@ -312,10 +312,10 @@ go test -race -count=1 -tags=integration ./internal/judge/
 
 **Công việc**
 - Snapshot: chép source + test + giới hạn + version vào thư mục tạm riêng của job (giữ khóa SHARE problem khi chép).
-- Biên dịch: `g++ -std=c++17 -O2 -pipe` (cờ cần chốt), giới hạn thời gian/bộ nhớ/output biên dịch; ghi `compiler_info` thực tế; compile output cắt gọn.
+- Biên dịch: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE` (Đã chốt 22/10/2026, câu 2), timeout 10 s, giới hạn bộ nhớ/output biên dịch; ghi `compiler_info` thực tế; compile output cắt gọn.
 - Chạy từng test: user không đặc quyền, không mạng (network namespace riêng hoặc tương đương), `setrlimit` CPU/AS/NPROC/FSIZE/NOFILE, wall-clock timeout, giới hạn stdout; đo thời gian + bộ nhớ.
 - So sánh theo token (bỏ qua khoảng trắng/xuống dòng).
-- Verdict test: AC/WA/TLE/MLE/RE; verdict run: CE ở cấp run; AC khi tất cả test AC; quy tắc chọn verdict tổng khi nhiều loại lỗi **cần chốt**.
+- Verdict test: AC/WA/TLE/MLE/RE; verdict run: CE ở cấp run; AC khi tất cả test AC. Chạy **hết** mọi test; verdict tổng = verdict của test sai đầu tiên theo thứ tự (Đã chốt 22/10/2026, câu 1); API trả `passed_tests`, `total_tests`, `verdict` để FE hiện `10/15 TLE`.
 - Ghi kết quả từng test + tổng hợp run + job done trong một transaction (kiểm tra lại version/lease dưới khóa).
 
 **Checklist**
@@ -341,7 +341,7 @@ scripts/smoke.sh judge   # nộp bộ bài mẫu, chờ verdict
 
 **Công việc**
 - Thay stub `requeueProblem`: trong transaction tăng version, run/job cũ → `obsolete` (xóa verdict, xóa lease), tạo run + job mới tại version mới cho **mọi** bài nộp của problem (mọi phiên).
-- `POST /submissions/{id}/rejudge` (T): tạo lại lượt chấm cho một bài tại version hiện hành (cần chốt: dùng lại run hiện hành hay obsolete + tạo mới, vì `UNIQUE(submission_id, problem_version)`).
+- `POST /submissions/{id}/rejudge` (T): run cũ → `obsolete`, tạo run + job mới tại version hiện hành; đổi `UNIQUE(submission_id, problem_version)` thành unique index một phần `WHERE status <> 'obsolete'` trong migration `00001` (Đã chốt 22/10/2026, câu 6).
 - FE/REST hiển thị "đang chấm lại", không coi kết quả cũ là hiện hành.
 
 **Checklist**
@@ -366,7 +366,7 @@ scripts/smoke.sh rejudge
 **Công việc**
 - `GET /api/v1/ws`: kiểm tra `Origin`; message đầu tiên `{"type":"auth","data":{"token":"<access JWT>"}}` trong N giây, sai thì đóng.
 - Server push `{"type":"run.updated","data":{submission_id, run_id, status, verdict, passed_tests, total_tests}}`: SV chỉ nhận bài của mình, GV nhận theo phiên đang xem (`{"type":"subscribe","data":{"session_id":…}}`).
-- Nguồn sự kiện: worker ghi DB rồi `NOTIFY`; API `LISTEN` và phát cho client (cần chốt so với polling).
+- Nguồn sự kiện: worker ghi DB rồi `NOTIFY`; API `LISTEN` và phát cho client, polling dự phòng 5 s (Đã chốt 22/10/2026, câu 7).
 - Ping/pong, giới hạn kích thước message, đóng khi token hết hạn.
 
 **Checklist**
@@ -407,18 +407,9 @@ scripts/smoke.sh summary
 
 ---
 
-## Phase 13 — Chống gian lận trong phạm vi cho phép
+## Phase 13 — Chống gian lận
 
-**Mục tiêu:** chỉ làm những gì `BACKEND_CONTEXT.md` cho phép. Mục 13 ghi **ngoài phạm vi bản đầu**: phát hiện giống code, theo dõi rời tab; mục 3: "LAN không phải cơ chế chống gian lận".
-
-**Đã có sẵn nhờ thiết kế**
-- Danh tính lấy từ JWT, không tin ID client; thời gian theo server; không lộ test ẩn; SV không xem bài người khác.
-
-**Đề xuất (chờ quyết định, không tự làm)**
-- [ ] Ghi log IP/User-Agent theo lần nộp (cần cột mới hoặc log file)
-- [ ] Giới hạn một phiên đăng nhập SV tại một thời điểm
-- [ ] Danh sách IP/subnet được phép nộp bài
-- [ ] Xuất toàn bộ source để GV tự so sánh bằng công cụ ngoài (zip export — đã để sau v1)
+**Đã chốt 22/10/2026: không làm** thêm tính năng nào (câu 10). Những gì đã có nhờ thiết kế: danh tính lấy từ JWT, không tin ID client; thời gian theo server; không lộ test ẩn; SV không xem bài người khác. `BACKEND_CONTEXT.md` mục 13: theo dõi rời tab, phát hiện giống code vẫn ngoài phạm vi.
 
 ---
 
@@ -427,7 +418,6 @@ scripts/smoke.sh summary
 **Mục tiêu:** chạy ổn với ~50 SV trên laptop i3/12 GB; có số liệu thật cho báo cáo.
 
 **Công việc**
-- Rate limit login (chống dò mật khẩu) và nộp bài (cần chốt ngưỡng).
 - Log có cấu trúc (request id, user id, job id); thống kê thời gian chờ/chấm.
 - Kịch bản tải: 50 SV đăng nhập, 30 bài nộp gần như đồng thời, 15 test/bài; so sánh 1 worker vs nhiều worker (đề xuất thực nghiệm mục 14).
 - Sao lưu/khôi phục: `pg_dump` + `./data` cùng lúc.
@@ -438,7 +428,6 @@ scripts/smoke.sh summary
 - [ ] Không lỗi 5xx khi 50 client đồng thời
 - [ ] Khởi động lại toàn stack giữa chừng → không mất bài đã nhận, job được chấm tiếp
 - [ ] Sao lưu → xóa → khôi phục → dữ liệu và file khớp
-- [ ] Rate limit login hoạt động
 
 ---
 
@@ -462,37 +451,50 @@ scripts/smoke.sh summary
 
 ## Câu hỏi cần chốt
 
-Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai. Mỗi câu có **Đề xuất** của agent (ngày 22/10/2026) — **chưa được duyệt**; khi người dùng chốt, ghi "Đã chốt" + ngày vào câu đó và vào `BACKEND_CONTEXT.md`.
+Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai. Mỗi câu có **Đề xuất** của agent (22/10/2026). Người dùng trả lời cùng ngày; kết quả ghi ngay dưới từng câu và trong `BACKEND_CONTEXT.md` mục 19.
 
 ### Chặn phase 7–9
 
 1. **Chọn verdict tổng** khi một bài có nhiều loại lỗi; có dừng sau test sai đầu tiên không?
-   - **Đề xuất (chưa duyệt):** chạy **hết** mọi test (để có `passed_tests/total_tests` cho phúc khảo); verdict tổng = verdict của **test sai đầu tiên theo thứ tự test** (thứ tự `test_cases.id`). CE xét ở cấp run trước khi chạy test. Lý do: dễ giải thích cho SV, đúng với "đối chiếu số test đúng/tổng test" ở mục 6.
+   - **Đã chốt 22/10/2026: duyệt.** FE hiển thị dạng `10/15 TLE` = `passed_tests/total_tests` + verdict tổng, nên API trả cả ba trường.
+   - Đề xuất: chạy **hết** mọi test (để có `passed_tests/total_tests` cho phúc khảo); verdict tổng = verdict của **test sai đầu tiên theo thứ tự test** (thứ tự `test_cases.id`). CE xét ở cấp run trước khi chạy test. Lý do: dễ giải thích cho SV, đúng với "đối chiếu số test đúng/tổng test" ở mục 6.
 2. **Cờ biên dịch** và giới hạn khi biên dịch.
-   - **Đề xuất (chưa duyệt):** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch **10 giây**. `-static` để chương trình không phụ thuộc thư viện động khi chạy trong môi trường hạn chế; `ONLINE_JUDGE` theo thói quen của các hệ chấm. Compile output trả SV được cắt gọn (vd. 8 KB).
+   - **Đã chốt 22/10/2026: duyệt.**
+   - Đề xuất: `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch **10 giây**. `-static` để chương trình không phụ thuộc thư viện động khi chạy trong môi trường hạn chế; `ONLINE_JUDGE` theo thói quen của các hệ chấm. Compile output trả SV được cắt gọn (vd. 8 KB).
 3. **Sandbox**.
-   - **Đề xuất (chưa duyệt):** không dùng nsjail/isolate (phải tải về). Chạy bài SV bằng `setrlimit` (CPU, AS, FSIZE, NPROC) + **uid riêng không đặc quyền** + `unshare -n` (namespace mạng rỗng, kể cả không tới được `postgres`); container worker cần `cap_add: [SYS_ADMIN]`. Tiến trình con bỏ mọi capability, bật `no_new_privs`, chạy trong thư mục tạm riêng của job. Rủi ro: `SYS_ADMIN` là quyền rộng cho tiến trình worker — chấp nhận vì chỉ chạy trong LAN, worker không ra Internet; kiểm chứng bằng bộ bài tấn công ở phase 9.
+   - **Chưa chốt:** người dùng hỏi về `isolate` (có làm image phình to không). Phase 9 chờ quyết định này.
+   - Đề xuất ban đầu: không dùng nsjail/isolate (phải tải về). Chạy bài SV bằng `setrlimit` (CPU, AS, FSIZE, NPROC) + **uid riêng không đặc quyền** + `unshare -n` (namespace mạng rỗng, kể cả không tới được `postgres`); container worker cần `cap_add: [SYS_ADMIN]`. Tiến trình con bỏ mọi capability, bật `no_new_privs`, chạy trong thư mục tạm riêng của job. Rủi ro: `SYS_ADMIN` là quyền rộng cho tiến trình worker — chấp nhận vì chỉ chạy trong LAN, worker không ra Internet; kiểm chứng bằng bộ bài tấn công ở phase 9.
 4. **Kiểm tra file nộp**.
-   - **Đề xuất (chưa duyệt):** chỉ nhận tên file đuôi **`.cpp`**, **≤ 64 KB**, không rỗng; **không** bắt buộc UTF-8 (tránh từ chối bài có chú thích tiếng Việt mã hóa khác). Server tự đặt tên khi lưu, không giữ tên gốc (mục 7).
+   - **Đã chốt 22/10/2026: duyệt.**
+   - Đề xuất: chỉ nhận tên file đuôi **`.cpp`**, **≤ 64 KB**, không rỗng; **không** bắt buộc UTF-8 (tránh từ chối bài có chú thích tiếng Việt mã hóa khác). Server tự đặt tên khi lưu, không giữ tên gốc (mục 7).
 5. **Retry, backoff, lease, số worker**.
-   - **Đề xuất (chưa duyệt):** tối đa **3** lần thử cho lỗi hạ tầng, backoff **5 s / 30 s / 2 phút**; lease **60 s**, worker gia hạn (heartbeat) định kỳ khi đang chấm (vd. mỗi 20 s). `WORKER_CONCURRENCY` mặc định 2, chỉnh theo số đo phase 14.
+   - **Đã chốt 22/10/2026: duyệt.**
+   - Đề xuất: tối đa **3** lần thử cho lỗi hạ tầng, backoff **5 s / 30 s / 2 phút**; lease **60 s**, worker gia hạn (heartbeat) định kỳ khi đang chấm (vd. mỗi 20 s). `WORKER_CONCURRENCY` mặc định 2, chỉnh theo số đo phase 14.
 
 ### Các phase sau
 
 6. **Chấm lại thủ công một bài** (`UNIQUE(submission_id, problem_version)` chặn tạo run mới cùng version).
-   - **Đề xuất (chưa duyệt):** tạo **run mới**, run cũ chuyển `obsolete` (giữ lịch sử). Cách làm: thay ràng buộc `UNIQUE (submission_id, problem_version)` bằng **unique index một phần** `ON judge_runs (submission_id, problem_version) WHERE status <> 'obsolete'` — vẫn bảo đảm tối đa một run hiện hành mỗi (bài, version). Sửa thẳng migration `00001` (chưa có dữ liệu thật) và mục 9 `BACKEND_CONTEXT.md` ("một run cho mỗi (submission, version)" → "một run **không obsolete**"). Run đang `judging` bị thay thì worker cũ mất quyền ghi theo kiểm tra lease/run hiện hành.
+   - **Đã chốt 22/10/2026: duyệt** (gồm đổi UNIQUE thành unique index một phần — làm ở phase 10).
+   - Đề xuất: tạo **run mới**, run cũ chuyển `obsolete` (giữ lịch sử). Cách làm: thay ràng buộc `UNIQUE (submission_id, problem_version)` bằng **unique index một phần** `ON judge_runs (submission_id, problem_version) WHERE status <> 'obsolete'` — vẫn bảo đảm tối đa một run hiện hành mỗi (bài, version). Sửa thẳng migration `00001` (chưa có dữ liệu thật) và mục 9 `BACKEND_CONTEXT.md` ("một run cho mỗi (submission, version)" → "một run **không obsolete**"). Run đang `judging` bị thay thì worker cũ mất quyền ghi theo kiểm tra lease/run hiện hành.
 7. **Nguồn sự kiện WebSocket**.
-   - **Đề xuất (chưa duyệt):** PostgreSQL **`LISTEN/NOTIFY`** (worker `NOTIFY run_updated, '<run_id>'` trong transaction ghi kết quả; API giữ một kết nối `LISTEN`, đọc lại run rồi phát), kèm **polling dự phòng** (vd. 5 s) khi mất kết nối LISTEN. Không cần thêm dịch vụ (Redis…).
+   - **Đã chốt 22/10/2026: duyệt.**
+   - Đề xuất: PostgreSQL **`LISTEN/NOTIFY`** (worker `NOTIFY run_updated, '<run_id>'` trong transaction ghi kết quả; API giữ một kết nối `LISTEN`, đọc lại run rồi phát), kèm **polling dự phòng** (vd. 5 s) khi mất kết nối LISTEN. Không cần thêm dịch vụ (Redis…).
 8. **Rate limit**.
-   - **Đề xuất (chưa duyệt):** nộp bài: **cooldown 10 s** mỗi SV (không giới hạn tổng số lần nộp — mục 6); đăng nhập: tối đa **10 lần sai / 5 phút** theo `code` + IP, quá thì 429. Lưu bộ đếm trong bộ nhớ API (một instance).
+   - **Đã chốt 22/10/2026: không làm rate limit**, giữ đơn giản, tập trung vào nộp và chấm bài.
+   - ~~Đề xuất: nộp bài: **cooldown 10 s** mỗi SV (không giới hạn tổng số lần nộp — mục 6); đăng nhập: tối đa **10 lần sai / 5 phút** theo `code` + IP, quá thì 429. Lưu bộ đếm trong bộ nhớ API (một instance).~~
 9. ~~Swagger UI + cổng Postgres `127.0.0.1:5433`~~ — **Đã chốt 22/10/2026**: commit riêng (`88b294e`), login trong spec đã bỏ `role`; giữ đồng bộ theo quy tắc phase 0.
 10. **Chống gian lận** (phase 13).
-    - **Đề xuất (chưa duyệt):** chỉ làm phần `BACKEND_CONTEXT.md` cho phép mà không đổi phạm vi: (a) **một phiên đăng nhập SV hoạt động** — login mới xóa refresh token cũ của SV; (b) sau kỳ thi xuất source để GV tự so sánh bằng công cụ ngoài. Hai mục **theo dõi rời tab** và **báo cáo giống code** đang ghi "ngoài phạm vi bản đầu" ở mục 13 — chỉ làm nếu người dùng đổi quyết định đó (cần thêm bảng sự kiện + API FE gửi sự kiện, và một bước so sánh source).
+    - **Đã chốt 22/10/2026: không làm thêm** tính năng chống gian lận nào ngoài những gì đã có.
+    - ~~Đề xuất: chỉ làm phần `BACKEND_CONTEXT.md` cho phép mà không đổi phạm vi: (a) **một phiên đăng nhập SV hoạt động** — login mới xóa refresh token cũ của SV; (b) sau kỳ thi xuất source để GV tự so sánh bằng công cụ ngoài. Hai mục **theo dõi rời tab** và **báo cáo giống code** đang ghi "ngoài phạm vi bản đầu" ở mục 13 — chỉ làm nếu người dùng đổi quyết định đó (cần thêm bảng sự kiện + API FE gửi sự kiện, và một bước so sánh source).~~
 11. **Lớp học** (CSV có cột `class`, bảng `users` không có).
-    - **Đề xuất (chưa duyệt):** thêm cột **`class_name varchar(50) NULL`** vào `users` (sửa migration `00001`), import CSV lưu cột `class`, `GET /students` cho lọc theo lớp. Không tạo bảng lớp riêng (không có nghiệp vụ gắn lớp với đề/phiên).
+    - **Đã chốt 22/10/2026: bỏ qua** — làm trên LAN, chỉ một lớp ngồi trong phòng làm bài cùng lúc; cột `class` trong CSV tiếp tục bị bỏ qua.
+    - ~~Đề xuất: thêm cột **`class_name varchar(50) NULL`** vào `users` (sửa migration `00001`), import CSV lưu cột `class`, `GET /students` cho lọc theo lớp. Không tạo bảng lớp riêng (không có nghiệp vụ gắn lớp với đề/phiên).~~
 12. **Các lựa chọn agent tự đặt** ở `BACKEND_CONTEXT.md` mục 17 (ghi chú triển khai) và 18: SV phải join mới xem đề; GV chỉ thấy đề của mình; xóa đề khi còn con bị chặn; giới hạn nhập time/memory; mã trim + viết hoa.
-    - **Đề xuất (chưa duyệt):** **giữ nguyên** — đã có test và smoke test bao phủ.
+    - **Đã chốt 22/10/2026: giữ nguyên.**
+    - Đề xuất: **giữ nguyên** — đã có test và smoke test bao phủ.
 13. **Bàn giao** (`Instruction.md` ghi Google Drive, `Submission.md` ghi USB qua lớp trưởng).
-    - **Đề xuất (chưa duyệt):** làm theo **`Submission.md`** (văn bản cụ thể hơn, có hạn 31/10/2026): thư mục `NhomXX_TenProject/{Source,Report}`, báo cáo `.docx` qua Compilatio, source cho lớp trưởng chép USB; đồng thời giữ bản trên Google Drive phòng khi giảng viên yêu cầu theo `Instruction.md`.
+    - **Đã chốt 22/10/2026: duyệt.**
+    - Đề xuất: làm theo **`Submission.md`** (văn bản cụ thể hơn, có hạn 31/10/2026): thư mục `NhomXX_TenProject/{Source,Report}`, báo cáo `.docx` qua Compilatio, source cho lớp trưởng chép USB; đồng thời giữ bản trên Google Drive phòng khi giảng viên yêu cầu theo `Instruction.md`.
 14. **sqlc** (Makefile + `sqlc.yaml` có, nhưng chưa dùng vì không tải được).
-    - **Đề xuất (chưa duyệt):** giữ repository pgx viết tay (đã có test + smoke), **bỏ** `sqlc.yaml`, `queries/` và target `make sqlc` để tài liệu khớp thực tế; nếu sau này cài được sqlc thì chuyển dần từng feature.
+    - **Đã chốt 22/10/2026: duyệt, đã làm** — xóa `sqlc.yaml`, `queries/`, target `make sqlc`.
+    - Đề xuất: giữ repository pgx viết tay (đã có test + smoke), **bỏ** `sqlc.yaml`, `queries/` và target `make sqlc` để tài liệu khớp thực tế; nếu sau này cài được sqlc thì chuyển dần từng feature.
