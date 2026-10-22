@@ -18,7 +18,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Repo, công cụ, quy ước | ✅ xong (trừ sqlc) |
-| 1 | Docker Compose, cấu hình, biến môi trường | kiểm chứng |
+| 1 | Docker Compose, cấu hình, biến môi trường | ✅ xong |
 | 2 | Schema DB, migration, gộp bảng `users` | kiểm chứng + làm mới |
 | 3 | Auth (JWT, refresh token) | kiểm chứng |
 | 4 | Quản lý sinh viên | kiểm chứng |
@@ -84,18 +84,18 @@ go test ./internal/httpx/ && curl -s -o /dev/null -w '%{http_code}' localhost:80
 - `/healthz` ping DB; tắt êm khi SIGTERM.
 
 **Checklist**
-- [ ] `docker compose --env-file .env.example config --quiet` hợp lệ; thiếu `.env` thì báo biến bắt buộc
-- [ ] `docker compose build` thành công
-- [ ] Postgres healthy; chỉ lắng nghe `127.0.0.1:5433` trên host, không mở ra LAN
-- [ ] `curl http://localhost:8080/healthz` → 200 `{"db":"up"}`; qua IP LAN cũng 200
-- [ ] Dừng postgres → `/healthz` 503; bật lại → 200
-- [ ] Worker không ra được Internet, nối được `postgres:5432`
-- [ ] Container chạy user không root (`id`)
-- [ ] Image worker có `g++ 12.2.0`
-- [ ] `./data` là bind mount, file tạo trong container thuộc `APP_UID`
-- [ ] Config: thiếu/ngắn `JWT_SECRET` → API thoát với thông báo rõ (unit test)
-- [ ] Config: TTL/concurrency sai định dạng → lỗi rõ (unit test)
-- [ ] SIGTERM: API log `api shutting down`, worker log `worker stopping`, thoát mã 0
+- [x] `docker compose --env-file .env.example config --quiet` hợp lệ; thiếu `.env` thì báo biến bắt buộc — 22/10: OK; `--env-file /dev/null` báo thiếu `JWT_SECRET`, `POSTGRES_DB`, `POSTGRES_PASSWORD`, `POSTGRES_USER`
+- [x] `docker compose build` thành công — 22/10: `backend-api`, `backend-worker` built
+- [x] Postgres healthy; chỉ lắng nghe `127.0.0.1:5433` trên host, không mở ra LAN — 22/10: `ss -ltn` chỉ có `127.0.0.1:5433`; nối `192.168.1.9:5433` bị từ chối
+- [x] `curl http://localhost:8080/healthz` → 200 `{"db":"up"}`; qua IP LAN cũng 200 — 22/10: localhost 200, `192.168.1.9:8080` 200
+- [x] Dừng postgres → `/healthz` 503; bật lại → 200 — 22/10: 503 `{"db":"down"}` rồi 200
+- [x] Worker không ra được Internet, nối được `postgres:5432` — 22/10: `1.1.1.1:80` unreachable, `postgres:5432` reachable
+- [x] Container chạy user không root (`id`) — 22/10: api, worker `uid=1000` (theo `APP_UID` trong `.env`; mặc định image 10001)
+- [x] Image worker có `g++ 12.2.0` — 22/10: `g++ (Debian 12.2.0-14+deb12u1) 12.2.0`
+- [x] `./data` là bind mount, file tạo trong container thuộc `APP_UID` — 22/10: file tạo từ api thuộc 1000:1000 trên host (đã xóa file thử)
+- [x] Config: thiếu/ngắn `JWT_SECRET` → API thoát với thông báo rõ (unit test) — 22/10: **bổ sung** `internal/config/config_test.go`; `TestRequireAPIRejectsMissingOrShortSecret`, `TestRequireAPIReportsAllMissing` pass
+- [x] Config: TTL/concurrency sai định dạng → lỗi rõ (unit test) — 22/10: `TestLoadRejectsMalformedValues` pass (lỗi nêu tên biến)
+- [x] SIGTERM: API log `api shutting down`, worker log `worker stopping`, thoát mã 0 — 22/10: `docker compose restart api worker` → đủ 2 log, exit code 0
 
 **Kiểm tra cuối phase**
 ```bash
