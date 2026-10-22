@@ -109,7 +109,6 @@ CREATE TABLE judge_runs (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     started_at timestamptz,
     finished_at timestamptz,
-    UNIQUE (submission_id, problem_version),
     CHECK (passed_tests >= 0 AND total_tests >= passed_tests),
     CHECK (status <> 'completed' OR
         (verdict IS NOT NULL AND total_tests > 0 AND finished_at IS NOT NULL)),
@@ -168,6 +167,11 @@ CREATE INDEX submissions_problem_idx ON submissions (problem_id, id);
 CREATE INDEX test_results_test_case_idx ON submission_test_results (test_case_id);
 CREATE INDEX jobs_queue_idx ON judge_jobs (available_at, id) WHERE status = 'queued';
 CREATE INDEX jobs_expired_lease_idx ON judge_jobs (lease_expires_at, id) WHERE status = 'running';
+-- Toi da mot run khong obsolete cho moi (bai nop, version) (22/10/2026, thay
+-- UNIQUE (submission_id, problem_version)): cham lai thu cong tao run moi cung
+-- version sau khi chuyen run cu sang obsolete.
+CREATE UNIQUE INDEX judge_runs_current_idx ON judge_runs (submission_id, problem_version)
+    WHERE status <> 'obsolete';
 
 COMMIT;
 

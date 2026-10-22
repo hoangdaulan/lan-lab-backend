@@ -23,6 +23,7 @@ type fakeRepo struct {
 	sessions    map[int64]SessionWindow
 	participant map[[2]int64]bool
 	requeued    []int // versions requeued
+	submissions int   // submissions of the problem (requeue count)
 	nextID      int64
 }
 
@@ -81,17 +82,19 @@ func (f *fakeRepo) Get(_ context.Context, id int64) (Problem, error) {
 	return Problem{}, apperr.NotFound("problem")
 }
 
-func (f *fakeRepo) Update(_ context.Context, id int64, in Input) (Problem, bool, error) {
+func (f *fakeRepo) Update(_ context.Context, id int64, in Input) (Problem, int, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := f.problems[id]
 	bumped := LimitsChanged(*p, in)
 	p.Code, p.Title, p.Statement, p.TimeLimitMs, p.MemoryLimitMb = in.Code, in.Title, in.Statement, in.TimeLimitMs, in.MemoryLimitMb
+	n := 0
 	if bumped {
 		p.Version++
 		f.requeued = append(f.requeued, p.Version)
+		n = f.submissions
 	}
-	return *p, bumped, nil
+	return *p, n, bumped, nil
 }
 
 func (f *fakeRepo) Delete(_ context.Context, id int64) error {
@@ -107,7 +110,7 @@ func (f *fakeRepo) ListTests(_ context.Context, id int64) ([]TestCase, error) {
 	return f.tests[id], nil
 }
 
-func (f *fakeRepo) ReplaceTests(_ context.Context, id int64, tests []TestFile) (Problem, error) {
+func (f *fakeRepo) ReplaceTests(_ context.Context, id int64, tests []TestFile) (Problem, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var rows []TestCase
@@ -118,7 +121,7 @@ func (f *fakeRepo) ReplaceTests(_ context.Context, id int64, tests []TestFile) (
 	p := f.problems[id]
 	p.Version++
 	f.requeued = append(f.requeued, p.Version)
-	return *p, nil
+	return *p, f.submissions, nil
 }
 
 func (f *fakeRepo) SessionWindow(_ context.Context, id int64) (SessionWindow, error) {
@@ -204,25 +207,26 @@ func TestUpdateBumpsVersionOnlyWhenLimitsChange(t *testing.T) {
 
 	in := validInput()
 	in.Title, in.Statement = "Sum of two", "new text"
-	got, bumped, err := svc.Update(ctx, teacherA, p.ID, in)
-	if err != nil || bumped || got.Version != 1 {
-		t.Fatalf("text-only update = %+v bumped=%v err=%v; want version 1, no bump", got, bumped, err)
+	repo.submissions = 4
+	res, err := svc.Update(ctx, teacherA, p.ID, in)
+	if err != nil || res.Bumped || res.Problem.Version != 1 || res.Requeued != 0 {
+		t.Fatalf("text-only update = %+v err=%v; want version 1, no bump", res, err)
 	}
 
 	in.TimeLimitMs = 2000
-	got, bumped, err = svc.Update(ctx, teacherA, p.ID, in)
-	if err != nil || !bumped || got.Version != 2 {
-		t.Fatalf("time limit update = %+v bumped=%v err=%v; want version 2", got, bumped, err)
+	res, err = svc.Update(ctx, teacherA, p.ID, in)
+	if err != nil || !res.Bumped || res.Problem.Version != 2 || res.Requeued != 4 {
+		t.Fatalf("time limit update = %+v err=%v; want version 2, 4 requeued", res, err)
 	}
 	in.MemoryLimitMb = 128
-	got, bumped, _ = svc.Update(ctx, teacherA, p.ID, in)
-	if !bumped || got.Version != 3 {
-		t.Fatalf("memory update version = %d bumped=%v; want 3", got.Version, bumped)
+	res, _ = svc.Update(ctx, teacherA, p.ID, in)
+	if !res.Bumped || res.Problem.Version != 3 {
+		t.Fatalf("memory update = %+v; want version 3", res)
 	}
 	if len(repo.requeued) != 2 {
 		t.Errorf("requeued = %v, want 2 entries", repo.requeued)
 	}
-	if _, _, err := svc.Update(ctx, teacherB, p.ID, in); !errors.Is(err, apperr.ErrNotFound) {
+	if _, err := svc.Update(ctx, teacherB, p.ID, in); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("other teacher err = %v", err)
 	}
 }
@@ -297,7 +301,7 @@ func TestRejudgeReplacesTestsAndBumpsVersion(t *testing.T) {
 	ctx := context.Background()
 	p, _ := svc.Create(ctx, teacherA, examID, validInput())
 
-	if _, _, err := svc.Rejudge(ctx, teacherA, p.ID); !errors.Is(err, apperr.ErrConflict) {
+	if _, _, _, err := svc.Rejudge(ctx, teacherA, p.ID); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("rejudge with no tests err = %v, want ErrConflict", err)
 	}
 	if p2, _ := repo.Get(ctx, p.ID); p2.Version != 1 {
@@ -305,14 +309,15 @@ func TestRejudgeReplacesTestsAndBumpsVersion(t *testing.T) {
 	}
 
 	writeFiles(t, filepath.Join(dataDir, TestDir(p.ID)), map[string]string{"1.in": "1 2", "1.out": "3", "2.in": "", "2.out": "0"})
-	got, tests, err := svc.Rejudge(ctx, teacherA, p.ID)
+	repo.submissions = 3
+	got, tests, requeued, err := svc.Rejudge(ctx, teacherA, p.ID)
 	if err != nil {
 		t.Fatalf("Rejudge: %v", err)
 	}
-	if got.Version != 2 || len(tests) != 2 || len(repo.tests[p.ID]) != 2 {
-		t.Fatalf("version=%d tests=%d rows=%d", got.Version, len(tests), len(repo.tests[p.ID]))
+	if got.Version != 2 || len(tests) != 2 || len(repo.tests[p.ID]) != 2 || requeued != 3 {
+		t.Fatalf("version=%d tests=%d rows=%d requeued=%d", got.Version, len(tests), len(repo.tests[p.ID]), requeued)
 	}
-	if _, _, err := svc.Rejudge(ctx, teacherB, p.ID); !errors.Is(err, apperr.ErrNotFound) {
+	if _, _, _, err := svc.Rejudge(ctx, teacherB, p.ID); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("other teacher err = %v", err)
 	}
 }

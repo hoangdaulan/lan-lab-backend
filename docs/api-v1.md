@@ -8,7 +8,7 @@
 - Khi chuyển vai trò giáo viên/sinh viên, thay token trong Authorize. Refresh token nhập riêng trong body của refresh/logout.
 - Import CSV: `POST /api/v1/students/import` → **Try it out** → chọn file ở trường `file`. Mẫu ở `examples/students-import.csv`.
 - Chỉnh ngày giờ trong request tạo phiên cho phù hợp lúc test; ID lấy từ response thực tế.
-- Swagger chỉ mô tả 37 thao tác hiện có. Bài nộp nằm ở `queued` tới khi có worker chấm (phase 8–9). Rejudge chưa xếp hàng/chấm thật dù response hiện trả `rejudge_queued: true`.
+- Swagger mô tả 38 thao tác hiện có. Worker chấm thật (g++ C++17 trong sandbox); chấm lại problem/bài nộp đã hoạt động; WebSocket chưa có.
 - Đặc tả được duy trì trong `docs/swagger.json` và `docs/swagger.yaml`, nhúng vào binary bằng `docs/docs.go`. Không chạy `swag init` ghi đè khi handler chưa có annotation đầy đủ.
 - Khi sửa code/spec trong môi trường Compose, build lại API: `docker compose up -d --build --no-deps api`.
 
@@ -81,7 +81,7 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 | GET | `/submissions/{id}` | T/S | Trạng thái run hiện hành, verdict, passed/total, compile output đã cắt | ✅ |
 | GET | `/submissions/{id}/source` | T/S | Tải mã nguồn (S chỉ bài của mình) | ✅ |
 | GET | `/submissions/{id}/tests` | T | Kết quả từng test (phúc khảo) | ✅ |
-| POST | `/submissions/{id}/rejudge` | T | Chấm lại thủ công 1 bài tại version hiện hành | |
+| POST | `/submissions/{id}/rejudge` | T | Chấm lại thủ công 1 bài tại version hiện hành | ✅ |
 
 ## 6. Trạng thái chấm, WebSocket, hàng đợi
 
@@ -248,15 +248,15 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 
   `code` trim + viết hoa, 1–20 ký tự, không khoảng trắng, duy nhất trong đề (409 nếu trùng). `time_limit_ms` 1–10000, `memory_limit_mb` 1–1024 (chặn nhập nhầm, chưa phải giới hạn chính thức).
 - Problem: `{id, exam_id, code, title, statement, time_limit_ms, memory_limit_mb, version, test_dir, created_at, updated_at}`. `test_dir` là thư mục test tương đối với `DATA_DIR` (trên máy server: `./data/problems/<id>/tests`), được tạo khi tạo problem.
-- `PUT /problems/{id}` → `{"problem": ..., "rejudge_queued": bool}`. Đổi `time_limit_ms` hoặc `memory_limit_mb` → `version + 1` và chấm lại (`rejudge_queued: true`); chỉ sửa chữ thì không.
+- `PUT /problems/{id}` → `{"problem": ..., "rejudge_queued": bool, "requeued_submissions": n}`. Đổi `time_limit_ms` hoặc `memory_limit_mb` → `version + 1` và chấm lại mọi bài nộp (`rejudge_queued: true`); chỉ sửa chữ thì không.
 - `DELETE /problems/{id}` → 204 (xóa luôn các dòng `test_cases`; file test trên đĩa giữ nguyên); 409 nếu đã có bài nộp.
 - `GET /problems/{id}/tests` → `{"test_dir": ..., "items": [{id, input, output}]}` theo thứ tự chấm.
 - `POST /problems/{id}/rejudge` → quét `test_dir`:
   - mỗi `N.in` phải có `N.out` và ngược lại; file rỗng hợp lệ; file khác đuôi và file ẩn bị bỏ qua; symlink/thư mục con bị từ chối; tối đa 500 test;
   - thứ tự: tên là số thì theo số (`2` trước `10`), còn lại theo tên;
   - lỗi file → 409, không đổi gì;
-  - thành công → thay `test_cases`, `version + 1`, chấm lại mọi bài nộp của problem ở mọi phiên → `{"problem": ..., "tests": [{name, input, output, input_size, output_size}], "rejudge_queued": true}`.
-  - Phần tạo lượt chấm lại hiện là stub (chưa có bài nộp/worker); triển khai ở bước submission + judge.
+  - thành công → thay `test_cases`, `version + 1`, chấm lại mọi bài nộp của problem ở mọi phiên → `{"problem": ..., "tests": [{name, input, output, input_size, output_size}], "rejudge_queued": true, "requeued_submissions": n}`.
+  - Chấm lại (cả khi đổi limit): trong cùng transaction, mọi run/job hiện hành của problem chuyển `obsolete` (worker đang chấm version cũ bị loại kết quả), tạo run + job `queued` ở version mới cho mọi bài nộp, mọi phiên. Trong lúc chờ, `result` của bài nộp là run mới `queued`; kết quả cũ không còn là hiện hành (AC cũ có thể mất).
 - `GET /sessions/{id}/problems/{pid}` (S) → `{id, code, title, statement, time_limit_ms, memory_limit_mb}`. 403 trước `starts_at` hoặc khi chưa tham gia phiên; 404 nếu problem không thuộc đề của phiên. Sau khi phiên kết thúc vẫn xem được.
 
 ## Chi tiết Nộp bài
@@ -297,3 +297,7 @@ Bài nộp + `compiler_info`, `compile_output` trong `result`; `system_error` ch
 ### `GET /submissions/{id}/tests` (T)
 
 `{"submission": ..., "items": [{test_case_id, verdict, execution_time_ms, memory_used_kb}]}` của run hiện hành. Khi dừng ở test sai đầu tiên, chỉ các test đã chạy có dòng.
+
+### `POST /submissions/{id}/rejudge` (T)
+
+Chấm lại một bài: run hiện hành và job của nó chuyển `obsolete`, tạo run + job mới ở version hiện tại; bài khác không đổi. Trả **202** + đối tượng bài nộp (`result.status = "queued"`). GV không sở hữu đề → 404. Mỗi (bài nộp, version) có tối đa một run không `obsolete` (unique index một phần `judge_runs_current_idx`).

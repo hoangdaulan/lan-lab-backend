@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test HTTP cho API v1 trên stack dev đang chạy (docs/IMPLEMENTATION_PLAN.md).
 #
-#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|all]
+#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|rejudge|all]
 #
 # Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
 # tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
@@ -514,6 +514,89 @@ EOF
 	expect "student sees compile output for CE" 200 '"error" in (d["result"]["compile_output"] or "")'
 }
 
+# result_of SUBMISSION_ID TOKEN -> "passed/total VERDICT@vVERSION run=ID" once judged
+result_of() {
+	wait_result "$1" "$2" || {
+		echo "timeout"
+		return
+	}
+	jget "'%d/%d %s@v%d run=%d' % (d['result']['passed_tests'], d['result']['total_tests'], d['result']['verdict'], d['result']['problem_version'], d['result']['run_id'])"
+}
+
+section_rejudge() {
+	echo "== rejudge (needs the worker with the sandbox)"
+	local tt s1 s2 a="SMK${RUN}Q1" b="SMK${RUN}Q2"
+	tt=$(teacher_token)
+	new_student "$a" "$tt" >/dev/null
+	new_student "$b" "$tt" >/dev/null
+	s1=$(login "$a" "$a")
+	s2=$(login "$b" "$b")
+	make_exam "$tt"
+	req POST "/exams/$EXAM_ID/problems" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
+	local pid dir
+	pid=$(jget 'd["id"]')
+	dir="$DATA_HOST_DIR/$(jget 'd["test_dir"]')"
+	printf '1 2\n' >"$dir/1.in"
+	printf '3\n' >"$dir/1.out"
+	printf '10 20\n' >"$dir/2.in"
+	printf '30\n' >"$dir/2.out"
+	req POST "/problems/$pid/rejudge" "" "$tt"
+	req POST "/sessions/$RUNNING_ID/join" "" "$s1"
+	req POST "/sessions/$RUNNING_ID/join" "" "$s2"
+
+	# fast: a+b; slow: ~0.3 s of CPU per test, then a+b.
+	printf '#include <cstdio>\nint main(){long long a,b;scanf("%%lld %%lld",&a,&b);printf("%%lld\\n",a+b);}\n' >"$TMP/fast.cpp"
+	printf '#include <cstdio>\nint main(){long long a,b;scanf("%%lld %%lld",&a,&b);volatile unsigned long x=0;for(unsigned long i=0;i<400000000UL;i++)x+=i;printf("%%lld\\n",a+b);}\n' >"$TMP/slow.cpp"
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/fast.cpp" "$s1"
+	local f
+	f=$(jget 'd["id"]')
+	upload "/sessions/$RUNNING_ID/problems/$pid/submissions" "$TMP/slow.cpp" "$s2"
+	local sl
+	sl=$(jget 'd["id"]')
+	local rf rs
+	rf=$(result_of "$f" "$s1")
+	rs=$(result_of "$sl" "$s2")
+	STATUS=200 BODY="{\"fast\":\"$rf\",\"slow\":\"$rs\"}"
+	expect "both AC at v2" 200 'd["fast"].startswith("2/2 AC@v2") and d["slow"].startswith("2/2 AC@v2")'
+
+	# The teacher edits an expected output on the server, then presses rejudge.
+	printf '31\n' >"$dir/2.out"
+	req POST "/problems/$pid/rejudge" "" "$tt"
+	expect "rejudge requeues both submissions" 200 'd["problem"]["version"] == 3 and d["requeued_submissions"] == 2'
+	req GET "/submissions/$f" "" "$s1"
+	# Current result is the v3 run (queued or already judged), never the v2 AC.
+	expect "current result is the new version, not the old AC" 200 'd["result"]["problem_version"] == 3'
+	rf=$(result_of "$f" "$s1")
+	rs=$(result_of "$sl" "$s2")
+	STATUS=200 BODY="{\"fast\":\"$rf\",\"slow\":\"$rs\"}"
+	expect "AC lost after test change: 1/2 WA at v3" 200 'd["fast"].startswith("1/2 WA@v3") and d["slow"].startswith("1/2 WA@v3")'
+
+	printf '30\n' >"$dir/2.out"
+	req POST "/problems/$pid/rejudge" "" "$tt"
+	rf=$(result_of "$f" "$s1")
+	STATUS=200 BODY="{\"fast\":\"$rf\"}"
+	expect "test fixed: AC again at v4" 200 'd["fast"].startswith("2/2 AC@v4")'
+
+	# Lower time limit: requeue; the slow program now exceeds it.
+	req PUT "/problems/$pid" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":100,"memory_limit_mb":256}' "$tt"
+	expect "limit change requeues" 200 'd["problem"]["version"] == 5 and d["rejudge_queued"] and d["requeued_submissions"] == 2'
+	rf=$(result_of "$f" "$s1")
+	rs=$(result_of "$sl" "$s2")
+	STATUS=200 BODY="{\"fast\":\"$rf\",\"slow\":\"$rs\"}"
+	expect "100 ms limit: fast AC, slow 0/2 TLE" 200 'd["fast"].startswith("2/2 AC@v5") and d["slow"].startswith("0/2 TLE@v5")'
+
+	# Manual rejudge of one submission: new run, same version, other untouched.
+	local slow_run=${rs##*run=} fast_run=${rf##*run=}
+	req POST "/submissions/$f/rejudge" "" "$tt"
+	expect "manual rejudge accepted" 202 "d['result']['status'] == 'queued' and d['result']['problem_version'] == 5 and d['result']['run_id'] != $fast_run"
+	req POST "/submissions/$f/rejudge" "" "$s1"
+	expect "student cannot rejudge" 403
+	rf=$(result_of "$f" "$s1")
+	req GET "/submissions/$sl" "" "$s2"
+	STATUS=200 BODY="{\"fast\":\"$rf\",\"slow_run\":$(jget 'd["result"]["run_id"]')}"
+	expect "only that submission was rejudged" 200 "d['fast'].startswith('2/2 AC@v5') and d['slow_run'] == $slow_run"
+}
+
 case ${1:-all} in
 auth) section_auth ;;
 students) section_students ;;
@@ -521,6 +604,7 @@ exams) section_exams ;;
 problems) section_problems ;;
 submissions) section_submissions ;;
 judge) section_judge ;;
+rejudge) section_rejudge ;;
 all)
 	section_auth
 	section_students
@@ -528,9 +612,10 @@ all)
 	section_problems
 	section_submissions
 	section_judge
+	section_rejudge
 	;;
 *)
-	echo "usage: $0 [auth|students|exams|problems|submissions|judge|all]" >&2
+	echo "usage: $0 [auth|students|exams|problems|submissions|judge|rejudge|all]" >&2
 	exit 2
 	;;
 esac

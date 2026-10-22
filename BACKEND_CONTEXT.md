@@ -174,7 +174,7 @@ Chi tiết kiểu dữ liệu/constraint/index xem `database/schema-design.sql`.
 - `test_cases` không có `position`; có thể dùng `id` để có thứ tự ổn định.
 - Không có `auth_sessions`; đã thay bằng `refresh_tokens`.
 - Không có bảng tổng điểm; kết quả AC được truy vấn từ lượt chấm hiện hành.
-- **[Sẽ thay ở phase 10, mục 19: một run không obsolete]** Một run cho mỗi `(submission_id, problem_version)`; retry hạ tầng dùng lại run đó, không tạo thêm run trùng version.
+- **[Đã thay thế 22/10/2026, mục 19]** ~~Một run cho mỗi `(submission_id, problem_version)`~~ → tối đa **một run không `obsolete`** cho mỗi `(submission_id, problem_version)` (unique index một phần `judge_runs_current_idx`); retry hạ tầng dùng lại run đó, chấm lại thủ công tạo run mới sau khi chuyển run cũ sang `obsolete`.
 - Một job cho mỗi run; nhận bài phải tạo submission + run + job cùng transaction.
 
 ## 10. Transaction, hàng đợi và phục hồi
@@ -400,3 +400,4 @@ Người dùng trả lời các đề xuất của agent:
 - **Bàn giao:** theo `Submission.md` (thư mục `NhomXX_TenProject/{Source,Report}`, USB qua lớp trưởng), giữ thêm bản Google Drive.
 - **Bỏ sqlc:** xóa `sqlc.yaml`, `queries/`, target `make sqlc`; repository viết tay bằng pgx.
 - **Hàng đợi (triển khai phase 8):** snapshot test/giới hạn/version đọc trong transaction claim; không giữ khóa khi chép file vì test được sửa trực tiếp trên đĩa — tính đúng dựa vào kiểm tra version + lease khi ghi kết quả (thay ý "giữ khóa SHARE problem trong lúc copy" ở chú thích SQL mục 4). Thời gian hàng đợi dùng `clock_timestamp()` của DB. Biến môi trường mới `WORKER_LEASE` (mặc định 60s, tối thiểu 3s).
+- **Chấm lại (triển khai phase 10):** đổi limit hoặc bấm "Chấm lại" problem → trong transaction khóa problem, mọi run/job không `obsolete` của problem (kể cả run `completed` version cũ) chuyển `obsolete`, tạo run + job mới version mới cho mọi bài nộp ở mọi phiên. Chấm lại thủ công một bài (`POST /submissions/{id}/rejudge`) làm tương tự cho riêng bài đó, cùng version. Migration `00001` đã đổi `UNIQUE (submission_id, problem_version)` thành `judge_runs_current_idx`; DB dev được `ALTER` tại chỗ (không xóa dữ liệu) cho khớp.

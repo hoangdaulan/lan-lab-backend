@@ -59,6 +59,7 @@ type fakeRepo struct {
 	subs      map[int64]Submission
 	owner     map[int64]int64 // session -> teacher
 	listed    []Filter
+	rejudged  []int64
 }
 
 func newFakeRepo() *fakeRepo {
@@ -90,6 +91,11 @@ func (f *fakeRepo) List(_ context.Context, _ int64, flt Filter) ([]Submission, e
 
 func (f *fakeRepo) ListTestResults(context.Context, int64) ([]TestResult, error) {
 	return []TestResult{{TestCaseID: 1, Verdict: "AC"}}, nil
+}
+
+func (f *fakeRepo) Rejudge(_ context.Context, id int64) (Submission, error) {
+	f.rejudged = append(f.rejudged, id)
+	return f.subs[id], nil
 }
 
 func (f *fakeRepo) SessionOwner(_ context.Context, id int64) (int64, error) {
@@ -258,5 +264,22 @@ func TestFSStorage(t *testing.T) {
 	}
 	if _, err := st.Read(rel); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("after remove: %v", err)
+	}
+}
+
+func TestRejudgeOnlyByOwningTeacher(t *testing.T) {
+	svc, repo, _ := newTestService()
+	repo.subs[1] = Submission{ID: 1, StudentID: 7, TeacherID: 100}
+	ctx := context.Background()
+	for _, teacher := range []int64{200} {
+		if _, err := svc.Rejudge(ctx, teacher, 1); !errors.Is(err, apperr.ErrNotFound) {
+			t.Errorf("teacher %d: err = %v, want ErrNotFound", teacher, err)
+		}
+	}
+	if _, err := svc.Rejudge(ctx, 100, 2); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("missing submission: %v", err)
+	}
+	if _, err := svc.Rejudge(ctx, 100, 1); err != nil || len(repo.rejudged) != 1 {
+		t.Fatalf("owner rejudge: %v, calls %v", err, repo.rejudged)
 	}
 }
