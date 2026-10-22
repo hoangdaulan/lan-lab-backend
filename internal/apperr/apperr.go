@@ -17,6 +17,8 @@ var (
 	ErrConflict = errors.New("conflict")
 	// ErrForbidden: the caller may see the resource but not do this now (403).
 	ErrForbidden = errors.New("forbidden")
+	// ErrTooLarge: the uploaded content exceeds a size limit (413).
+	ErrTooLarge = errors.New("too large")
 )
 
 // Invalid returns an ErrInvalidInput with a message for the client.
@@ -32,6 +34,11 @@ func NotFound(what string) error {
 // Conflict returns an ErrConflict with a message for the client.
 func Conflict(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrConflict, fmt.Sprintf(format, args...))
+}
+
+// TooLarge returns an ErrTooLarge with a message for the client.
+func TooLarge(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrTooLarge, fmt.Sprintf(format, args...))
 }
 
 // Forbidden returns an ErrForbidden with a message for the client.

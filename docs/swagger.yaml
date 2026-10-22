@@ -2,10 +2,10 @@ swagger: '2.0'
 info:
   title: LAN Auto-Grader API
   version: 1.0.0
-  description: API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer
-    <access_token>. Đổi token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test.
-    Rejudge mới đồng bộ test/tăng version, chưa xếp hàng chấm thật. Submission, worker
-    chấm và WebSocket chưa có endpoint hoạt động.
+  description: API hiện đã triển khai. Đăng nhập trước, bấm Authorize và nhập Bearer <access_token>. Đổi
+    token khi đổi vai trò. Chỉnh ngày giờ phiên theo lúc test. Rejudge mới đồng bộ test/tăng version,
+    chưa xếp hàng chấm thật. Nộp bài đã hoạt động (bài nằm ở trạng thái queued tới khi có worker chấm);
+    WebSocket chưa có.
 basePath: /
 produces:
 - application/json
@@ -14,8 +14,8 @@ securityDefinitions:
     type: apiKey
     in: header
     name: Authorization
-    description: 'Nhập cả tiền tố: Bearer <access_token>. Token giáo viên dùng cho
-      quản lý, token sinh viên dùng join/finish.'
+    description: 'Nhập cả tiền tố: Bearer <access_token>. Token giáo viên dùng cho quản lý, token sinh
+      viên dùng join/finish.'
 security:
 - BearerAuth: []
 paths:
@@ -55,9 +55,8 @@ paths:
       tags:
       - Auth
       summary: Đăng nhập
-      description: Body chỉ gồm code và password; vai trò (teacher/student) lấy từ
-        tài khoản trong DB và trả về trong user.role + claim role của JWT. Gửi thêm
-        trường role sẽ bị 400.
+      description: Body chỉ gồm code và password; vai trò (teacher/student) lấy từ tài khoản trong DB
+        và trả về trong user.role + claim role của JWT. Gửi thêm trường role sẽ bị 400.
       operationId: post__api_v1_auth_login
       parameters:
       - name: body
@@ -330,8 +329,8 @@ paths:
         in: formData
         required: true
         type: file
-        description: 'CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã
-          có sẽ bỏ qua; dữ liệu mẫu: TESTSV001,Nguyễn Văn An.'
+        description: 'CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã có sẽ bỏ qua; dữ liệu
+          mẫu: TESTSV001,Nguyễn Văn An.'
       responses:
         '200':
           description: Thành công
@@ -971,8 +970,7 @@ paths:
           description: Xung đột trạng thái hoặc dữ liệu
           schema:
             $ref: '#/definitions/Error'
-      description: Code hiện tại vẫn cho xem statement sau finished; đây là điểm đã
-        được nêu trong review.
+      description: Code hiện tại vẫn cho xem statement sau finished; đây là điểm đã được nêu trong review.
   /api/v1/exams/{id}/problems:
     get:
       tags:
@@ -1247,10 +1245,255 @@ paths:
           description: Xung đột trạng thái hoặc dữ liệu
           schema:
             $ref: '#/definitions/Error'
-      description: Tạo các cặp N.in/N.out trong data/problems/<id>/tests trên host
-        trước. API quét thư mục, lưu đường dẫn và tăng version. rejudge_queued hiện
-        trả true nhưng requeueProblem vẫn là stub; không coi đây là xác nhận chấm
-        thật.
+      description: Tạo các cặp N.in/N.out trong data/problems/<id>/tests trên host trước. API quét thư
+        mục, lưu đường dẫn và tăng version. rejudge_queued hiện trả true nhưng requeueProblem vẫn là stub;
+        không coi đây là xác nhận chấm thật.
+  /api/v1/sessions/{id}/problems/{pid}/submissions:
+    post:
+      tags:
+      - Nộp bài (SV)
+      summary: Nộp một file .cpp
+      operationId: post__api_v1_sessions_id_problems_pid_submissions
+      description: Chỉ nhận đuôi .cpp, 1 byte – 64 KB. received_at do server ghi khi nhận đủ file; phải
+        đã join phiên, chưa finish, starts_at <= received_at < ends_at, problem đã có test. Trả 202 khi
+        submission + run + job đã commit.
+      consumes:
+      - multipart/form-data
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: pid
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: file
+        in: formData
+        required: true
+        type: file
+        description: Mã nguồn C++17, đuôi .cpp, tối đa 64 KB.
+      responses:
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+        '202':
+          description: Đã nhận, đang chờ chấm
+          schema:
+            $ref: '#/definitions/Submission'
+        '413':
+          description: File lớn hơn 64 KB
+          schema:
+            $ref: '#/definitions/Error'
+  /api/v1/sessions/{id}/submissions:
+    get:
+      tags:
+      - Nộp bài (GV/SV)
+      summary: Danh sách bài nộp của phiên
+      operationId: get__api_v1_sessions_id_submissions
+      description: SV chỉ thấy bài của mình (student_id bị bỏ qua); GV sở hữu đề thấy mọi bài. Mới nhất
+        trước.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      - name: student_id
+        in: query
+        required: false
+        type: integer
+        format: int64
+        minimum: 1
+      - name: problem_id
+        in: query
+        required: false
+        type: integer
+        format: int64
+        minimum: 1
+      responses:
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+        '200':
+          description: Thành công
+          schema:
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/definitions/Submission'
+  /api/v1/submissions/{id}:
+    get:
+      tags:
+      - Nộp bài (GV/SV)
+      summary: Chi tiết bài nộp và kết quả hiện hành
+      operationId: get__api_v1_submissions_id
+      description: Kết quả hiện hành = run có problem_version bằng version hiện tại của problem; null
+        khi đang chờ chấm lại. system_error chỉ hiện cho GV.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+        '200':
+          description: Thành công
+          schema:
+            $ref: '#/definitions/Submission'
+  /api/v1/submissions/{id}/source:
+    get:
+      tags:
+      - Nộp bài (GV/SV)
+      summary: Tải mã nguồn
+      operationId: get__api_v1_submissions_id_source
+      produces:
+      - text/plain
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+        '200':
+          description: Nội dung file .cpp
+          schema:
+            type: string
+  /api/v1/submissions/{id}/tests:
+    get:
+      tags:
+      - Nộp bài (GV)
+      summary: Kết quả từng test của run hiện hành (phúc khảo)
+      operationId: get__api_v1_submissions_id_tests
+      parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+        format: int64
+        minimum: 1
+        description: ID thực tế trả về từ API, không mặc định là 1.
+      responses:
+        '400':
+          description: Dữ liệu không hợp lệ
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Thiếu/sai/hết hạn token hoặc thông tin đăng nhập
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Không đủ quyền
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Không tìm thấy
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Xung đột trạng thái hoặc dữ liệu
+          schema:
+            $ref: '#/definitions/Error'
+        '200':
+          description: Thành công
+          schema:
+            type: object
+            properties:
+              submission:
+                $ref: '#/definitions/Submission'
+              items:
+                type: array
+                items:
+                  $ref: '#/definitions/TestResult'
 definitions:
   Error:
     type: object
@@ -1516,3 +1759,98 @@ definitions:
       updated_at:
         type: string
         format: date-time
+  SubmissionResult:
+    type: object
+    properties:
+      run_id:
+        type: integer
+        format: int64
+      problem_version:
+        type: integer
+      status:
+        type: string
+        enum:
+        - queued
+        - judging
+        - completed
+        - system_error
+      verdict:
+        type: string
+        enum:
+        - AC
+        - WA
+        - TLE
+        - MLE
+        - CE
+        - RE
+        x-nullable: true
+      passed_tests:
+        type: integer
+      total_tests:
+        type: integer
+      compiler_info:
+        type: string
+      compile_output:
+        type: string
+      system_error:
+        type: string
+        description: Chỉ GV
+      created_at:
+        type: string
+        format: date-time
+      started_at:
+        type: string
+        format: date-time
+        x-nullable: true
+      finished_at:
+        type: string
+        format: date-time
+        x-nullable: true
+  Submission:
+    type: object
+    properties:
+      id:
+        type: integer
+        format: int64
+      session_id:
+        type: integer
+        format: int64
+      problem_id:
+        type: integer
+        format: int64
+      problem_code:
+        type: string
+      student_id:
+        type: integer
+        format: int64
+      student_code:
+        type: string
+      student_fullname:
+        type: string
+      received_at:
+        type: string
+        format: date-time
+      problem_version:
+        type: integer
+      result:
+        $ref: '#/definitions/SubmissionResult'
+  TestResult:
+    type: object
+    properties:
+      test_case_id:
+        type: integer
+        format: int64
+      verdict:
+        type: string
+        enum:
+        - AC
+        - WA
+        - TLE
+        - MLE
+        - RE
+      execution_time_ms:
+        type: integer
+      memory_used_kb:
+        type: integer
+        format: int64
+        x-nullable: true

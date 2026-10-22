@@ -23,6 +23,8 @@ func WriteError(w http.ResponseWriter, log *slog.Logger, err error) {
 		Error(w, http.StatusConflict, err.Error())
 	case errors.Is(err, apperr.ErrForbidden):
 		Error(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, apperr.ErrTooLarge):
+		Error(w, http.StatusRequestEntityTooLarge, err.Error())
 	default:
 		log.Error("request failed", "err", err)
 		Error(w, http.StatusInternalServerError, "internal error")

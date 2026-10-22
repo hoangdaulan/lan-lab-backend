@@ -8,7 +8,7 @@
 - Khi chuyển vai trò giáo viên/sinh viên, thay token trong Authorize. Refresh token nhập riêng trong body của refresh/logout.
 - Import CSV: `POST /api/v1/students/import` → **Try it out** → chọn file ở trường `file`. Mẫu ở `examples/students-import.csv`.
 - Chỉnh ngày giờ trong request tạo phiên cho phù hợp lúc test; ID lấy từ response thực tế.
-- Swagger chỉ mô tả 32 thao tác hiện có. Rejudge chưa xếp hàng/chấm thật dù response hiện trả `rejudge_queued: true`.
+- Swagger chỉ mô tả 37 thao tác hiện có. Bài nộp nằm ở `queued` tới khi có worker chấm (phase 8–9). Rejudge chưa xếp hàng/chấm thật dù response hiện trả `rejudge_queued: true`.
 - Đặc tả được duy trì trong `docs/swagger.json` và `docs/swagger.yaml`, nhúng vào binary bằng `docs/docs.go`. Không chạy `swag init` ghi đè khi handler chưa có annotation đầy đủ.
 - Khi sửa code/spec trong môi trường Compose, build lại API: `docker compose up -d --build --no-deps api`.
 
@@ -76,11 +76,11 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| POST | `/sessions/{sid}/problems/{pid}/submissions` | S | Upload 1 file `.cpp` ≤ 64 KB; trả 202 + id | |
-| GET | `/sessions/{sid}/submissions` | T/S | S: bài của mình; T: mọi bài, lọc `student_id`, `problem_id` | |
-| GET | `/submissions/{id}` | T/S | Trạng thái run hiện hành, verdict, passed/total, compile output đã cắt | |
-| GET | `/submissions/{id}/source` | T/S | Tải mã nguồn (S chỉ bài của mình) | |
-| GET | `/submissions/{id}/tests` | T | Kết quả từng test (phúc khảo) | |
+| POST | `/sessions/{sid}/problems/{pid}/submissions` | S | Upload 1 file `.cpp` ≤ 64 KB; trả 202 + id | ✅ |
+| GET | `/sessions/{sid}/submissions` | T/S | S: bài của mình; T: mọi bài, lọc `student_id`, `problem_id` | ✅ |
+| GET | `/submissions/{id}` | T/S | Trạng thái run hiện hành, verdict, passed/total, compile output đã cắt | ✅ |
+| GET | `/submissions/{id}/source` | T/S | Tải mã nguồn (S chỉ bài của mình) | ✅ |
+| GET | `/submissions/{id}/tests` | T | Kết quả từng test (phúc khảo) | ✅ |
 | POST | `/submissions/{id}/rejudge` | T | Chấm lại thủ công 1 bài tại version hiện hành | |
 
 ## 6. Trạng thái chấm, WebSocket, hàng đợi
@@ -258,3 +258,42 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
   - thành công → thay `test_cases`, `version + 1`, chấm lại mọi bài nộp của problem ở mọi phiên → `{"problem": ..., "tests": [{name, input, output, input_size, output_size}], "rejudge_queued": true}`.
   - Phần tạo lượt chấm lại hiện là stub (chưa có bài nộp/worker); triển khai ở bước submission + judge.
 - `GET /sessions/{id}/problems/{pid}` (S) → `{id, code, title, statement, time_limit_ms, memory_limit_mb}`. 403 trước `starts_at` hoặc khi chưa tham gia phiên; 404 nếu problem không thuộc đề của phiên. Sau khi phiên kết thúc vẫn xem được.
+
+## Chi tiết Nộp bài
+
+### `POST /sessions/{id}/problems/{pid}/submissions` (S)
+
+`multipart/form-data`, trường `file`: tên đuôi `.cpp` (không phân biệt hoa thường), 1 byte – 64 KB, không bắt buộc UTF-8. Tên gốc không được lưu; server lưu `DATA_DIR/submissions/<năm>/<tháng>/<32 hex>.cpp` và `fsync` trước khi ghi DB.
+
+- `received_at` = giờ server khi đã nhận đủ file.
+- Trong một transaction (khóa problem → phiên → participant): problem thuộc đề của phiên (404), đã join (409), chưa `finished` (409), `starts_at <= received_at < ends_at` (409), problem có test (409). Tạo submission + run `queued` (version hiện tại) + job `queued`, commit rồi trả **202**.
+- Nộp và finish cùng lúc: thao tác nào giữ khóa participant và commit trước thì thắng.
+- Lỗi: 400 (thiếu `file`, sai đuôi, rỗng), 413 (> 64 KB), 404, 409. Bị từ chối theo quy tắc → file vừa lưu bị xóa; lỗi DB khác → file giữ lại chờ dọn.
+
+Đối tượng bài nộp:
+
+```json
+{"id": 12, "session_id": 3, "problem_id": 5, "problem_code": "A",
+ "student_id": 7, "student_code": "B21DCCN001", "student_fullname": "Nguyen Van A",
+ "received_at": "2026-10-22T04:10:00Z", "problem_version": 2,
+ "result": {"run_id": 30, "problem_version": 2, "status": "queued", "verdict": null,
+            "passed_tests": 0, "total_tests": 0, "created_at": "...", "started_at": null, "finished_at": null}}
+```
+
+`result` là run hiện hành (cùng version với problem, không `obsolete`); `null` khi problem vừa đổi version và chưa có lượt chấm mới. `status`: `queued`, `judging`, `completed`, `system_error`. FE hiển thị `passed_tests/total_tests verdict`, ví dụ `10/15 TLE`.
+
+### `GET /sessions/{id}/submissions?student_id=&problem_id=` (T/S)
+
+`{"items": [bài nộp...]}`, mới nhất trước. SV chỉ thấy bài của mình (`student_id` bị bỏ qua); GV phải sở hữu đề (404 nếu không).
+
+### `GET /submissions/{id}` (T/S)
+
+Bài nộp + `compiler_info`, `compile_output` trong `result`; `system_error` chỉ trả cho GV. SV khác / GV khác → 404.
+
+### `GET /submissions/{id}/source` (T/S)
+
+`text/plain`, tải về dạng `submission-<id>.cpp`. Quyền như trên.
+
+### `GET /submissions/{id}/tests` (T)
+
+`{"submission": ..., "items": [{test_case_id, verdict, execution_time_ms, memory_used_kb}]}` của run hiện hành. Khi dừng ở test sai đầu tiên, chỉ các test đã chạy có dòng.

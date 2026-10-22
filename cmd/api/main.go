@@ -20,6 +20,7 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
 	"github.com/hoangdaulan/lan-lab-backend/internal/problem"
 	"github.com/hoangdaulan/lan-lab-backend/internal/student"
+	"github.com/hoangdaulan/lan-lab-backend/internal/submission"
 )
 
 func main() {
@@ -56,6 +57,8 @@ func run(log *slog.Logger) error {
 	studentHandler := student.NewHandler(student.NewService(student.NewRepository(pool), authSvc), log)
 	examHandler := exam.NewHandler(exam.NewService(exam.NewRepository(pool), nil), log)
 	problemHandler := problem.NewHandler(problem.NewService(problem.NewRepository(pool), cfg.DataDir, nil, log), log)
+	submissionHandler := submission.NewHandler(submission.NewService(submission.NewRepository(pool),
+		submission.NewStorage(cfg.DataDir), nil, log), log)
 
 	router := httpx.NewRouter(pool)
 	router.Route("/api/v1", func(r chi.Router) {
@@ -64,17 +67,20 @@ func run(log *slog.Logger) error {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Authenticate(authSvc))
 			examHandler.RegisterShared(r)
+			submissionHandler.RegisterShared(r)
 
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireRole(auth.RoleTeacher))
 				studentHandler.Register(r)
 				examHandler.RegisterTeacher(r)
 				problemHandler.RegisterTeacher(r)
+				submissionHandler.RegisterTeacher(r)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireRole(auth.RoleStudent))
 				examHandler.RegisterStudent(r)
 				problemHandler.RegisterStudent(r)
+				submissionHandler.RegisterStudent(r)
 			})
 		})
 	})
