@@ -39,6 +39,10 @@ type Config struct {
 
 	// WorkerPollInterval is how often an idle worker looks for queued jobs.
 	WorkerPollInterval time.Duration
+
+	// WorkerLease is how long a claimed job stays reserved without a
+	// heartbeat (BACKEND_CONTEXT.md §19: 60 s).
+	WorkerLease time.Duration
 }
 
 // Load reads every setting; callers validate what their binary needs with
@@ -61,6 +65,12 @@ func Load() (Config, error) {
 	}
 	if cfg.WorkerPollInterval, err = getenvDuration("WORKER_POLL_INTERVAL", time.Second); err != nil {
 		return Config{}, err
+	}
+	if cfg.WorkerLease, err = getenvDuration("WORKER_LEASE", 60*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.WorkerLease < 3*time.Second {
+		return Config{}, errors.New("WORKER_LEASE must be at least 3s")
 	}
 	if cfg.AccessTokenTTL, err = getenvDuration("ACCESS_TOKEN_TTL", 15*time.Minute); err != nil {
 		return Config{}, err

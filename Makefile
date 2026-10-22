@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed build test data
+.PHONY: up down migrate seed build test test-integration data
 
 # ./data is bind-mounted into api and worker; create it before compose does
 # (compose would create it as root).
@@ -31,3 +31,10 @@ build:
 test:
 	go vet ./...
 	go test ./...
+
+# Queue tests against the dev PostgreSQL (127.0.0.1:5433); each test creates
+# and drops its own database.
+test-integration:
+	set -a && . ./.env && set +a && \
+	TEST_DATABASE_URL="postgres://$$POSTGRES_USER:$$POSTGRES_PASSWORD@127.0.0.1:5433/$$POSTGRES_DB?sslmode=disable" \
+	go test -race -count=1 -tags=integration ./internal/judge/

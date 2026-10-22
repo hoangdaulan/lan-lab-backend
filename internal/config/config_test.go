@@ -10,7 +10,7 @@ import (
 func setEnv(t *testing.T, kv map[string]string) {
 	t.Helper()
 	for _, k := range []string{"DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "DATA_DIR", "WORKER_ID",
-		"WORKER_CONCURRENCY", "WORKER_POLL_INTERVAL", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL"} {
+		"WORKER_CONCURRENCY", "WORKER_POLL_INTERVAL", "WORKER_LEASE", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL"} {
 		t.Setenv(k, "")
 	}
 	for k, v := range kv {
@@ -27,7 +27,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.HTTPAddr != ":8080" || cfg.DataDir != "/data" || cfg.WorkerConcurrency != 2 ||
-		cfg.WorkerPollInterval != time.Second || cfg.AccessTokenTTL != 15*time.Minute ||
+		cfg.WorkerPollInterval != time.Second || cfg.WorkerLease != time.Minute || cfg.AccessTokenTTL != 15*time.Minute ||
 		cfg.RefreshTokenTTL != 7*24*time.Hour || cfg.WorkerID == "" {
 		t.Errorf("defaults = %+v", cfg)
 	}
@@ -75,6 +75,7 @@ func TestLoadRejectsMalformedValues(t *testing.T) {
 		"WORKER_POLL_INTERVAL": "1 second",
 		"ACCESS_TOKEN_TTL":     "15",
 		"REFRESH_TOKEN_TTL":    "week",
+		"WORKER_LEASE":         "1s",
 	}
 	for key, val := range cases {
 		setEnv(t, map[string]string{key: val})
