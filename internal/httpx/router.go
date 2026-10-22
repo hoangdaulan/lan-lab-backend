@@ -7,6 +7,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
+
+	_ "github.com/hoangdaulan/lan-lab-backend/docs"
 )
 
 // Pinger is satisfied by *pgxpool.Pool.
@@ -24,6 +27,13 @@ func NewRouter(db Pinger) chi.Router {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", healthz(db))
+	r.Get("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/index.html", http.StatusTemporaryRedirect)
+	})
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.PersistAuthorization(false),
+	))
 	return r
 }
 

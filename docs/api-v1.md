@@ -1,5 +1,17 @@
 # API v1
 
+## Test bằng Swagger UI
+
+- Mở `/swagger/index.html` trên cùng host/port với API, ví dụ `http://localhost:8080/swagger/index.html`.
+- UI, JavaScript và CSS được phục vụ từ ứng dụng; không cần CDN. Đặc tả: `/swagger/doc.json`.
+- `POST /api/v1/auth/login` → copy `access_token` → **Authorize** → nhập `Bearer <access_token>`.
+- Khi chuyển vai trò giáo viên/sinh viên, thay token trong Authorize. Refresh token nhập riêng trong body của refresh/logout.
+- Import CSV: `POST /api/v1/students/import` → **Try it out** → chọn file ở trường `file`. Mẫu ở `examples/students-import.csv`.
+- Chỉnh ngày giờ trong request tạo phiên cho phù hợp lúc test; ID lấy từ response thực tế.
+- Swagger chỉ mô tả 32 thao tác hiện có. Rejudge chưa xếp hàng/chấm thật dù response hiện trả `rejudge_queued: true`.
+- Đặc tả được duy trì trong `docs/swagger.json` và `docs/swagger.yaml`, nhúng vào binary bằng `docs/docs.go`. Không chạy `swag init` ghi đè khi handler chưa có annotation đầy đủ.
+- Khi sửa code/spec trong môi trường Compose, build lại API: `docker compose up -d --build --no-deps api`.
+
 Ngày chốt: **21/10/2026**. Quyết định nền: `BACKEND_CONTEXT.md` mục 17.
 
 - Prefix: `/api/v1` (trừ `/healthz`).
