@@ -55,8 +55,8 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 - Sinh viên: `code` là MSV. Mật khẩu mặc định bằng MSV, **chỉ lưu hash**. Được đổi mật khẩu, không bắt buộc đổi lần đầu.
 - Giáo viên đăng nhập bằng mã giáo viên và mật khẩu. Cách cấp tài khoản/mật khẩu ban đầu chưa chốt.
 - Không có `username`, `is_active` hoặc `must_change_password`.
-- Tầng Go có thể dùng kiểu `User` chung cho các trường chung; DB vẫn có **hai bảng `teachers`, `students`**. Không có bảng `users` hoặc kế thừa bảng PostgreSQL.
-- `code` duy nhất **trong từng bảng**, chưa có yêu cầu duy nhất trên cả hai loại tài khoản. API cần phân biệt loại tài khoản khi đăng nhập; hình thức endpoint chưa chốt.
+- **[Đã thay thế 22/10/2026, xem mục 18]** Tầng Go có thể dùng kiểu `User` chung cho các trường chung; DB vẫn có **hai bảng `teachers`, `students`**. Không có bảng `users` hoặc kế thừa bảng PostgreSQL.
+- **[Đã thay thế 22/10/2026, xem mục 18]** `code` duy nhất **trong từng bảng**, chưa có yêu cầu duy nhất trên cả hai loại tài khoản. API cần phân biệt loại tài khoản khi đăng nhập; hình thức endpoint chưa chốt.
 - Backend phải kiểm tra vai trò, quyền sở hữu và quyền truy cập; không tin ID sinh viên do client tự khai khi nộp bài.
 - Sinh viên chỉ xem bài nộp/kết quả của mình, không xem test ẩn hoặc dữ liệu sinh viên khác. Giáo viên xem bài nộp và kết quả tổng hợp trong phạm vi quyền của mình.
 
@@ -156,14 +156,13 @@ Chi tiết kiểu dữ liệu/constraint/index xem `database/schema-design.sql`.
 
 | Bảng | Cột |
 |---|---|
-| `teachers` | `id`, `fullname`, `code`, `password_hash`, `created_at`, `updated_at` |
-| `students` | `id`, `fullname`, `code`, `password_hash`, `created_at`, `updated_at` |
+| `users` | `id`, `code`, `fullname`, `role`, `password_hash`, `created_at`, `updated_at` (thay `teachers` + `students` từ 22/10/2026, mục 18) |
 | `exams` | `id`, `teacher_id`, `title`, `description`, `created_at`, `updated_at` |
 | `problems` | `id`, `exam_id`, `code`, `title`, `statement`, `time_limit_ms`, `memory_limit_mb`, `version`, `created_at`, `updated_at` |
 | `test_cases` | `id`, `problem_id`, `input`, `output` |
 | `exam_sessions` | `id`, `exam_id`, `name`, `starts_at`, `ends_at`, `created_at`, `updated_at` |
 | `exam_participants` | `id`, `exam_session_id`, `student_id`, `status`, `joined_at`, `finished_at` |
-| `refresh_tokens` | `id`, `teacher_id`, `student_id`, `token_hash`, `expires_at` |
+| `refresh_tokens` | `id`, `user_id`, `token_hash`, `expires_at` |
 | `submissions` | `id`, `exam_participant_id`, `problem_id`, `source_path`, `received_at` |
 | `judge_runs` | `id`, `submission_id`, `problem_version`, `status`, `verdict`, `passed_tests`, `total_tests`, `compiler_info`, `compile_output`, `system_error`, `created_at`, `started_at`, `finished_at` |
 | `submission_test_results` | `id`, `judge_run_id`, `test_case_id`, `verdict`, `execution_time_ms`, `memory_used_kb` |
@@ -327,7 +326,7 @@ Người dùng duyệt các quyết định dưới đây. Danh sách endpoint c
 
 ### Đăng nhập và token
 
-- Một endpoint `POST /api/v1/auth/login` với `role` (`teacher` | `student`) trong body, vì `code` chỉ duy nhất trong từng bảng.
+- **[Đã thay thế 22/10/2026, xem mục 18]** Một endpoint `POST /api/v1/auth/login` với `role` (`teacher` | `student`) trong body, vì `code` chỉ duy nhất trong từng bảng.
 - Access token: JWT **HS256**, sống **15 phút**, gửi qua `Authorization: Bearer`; FE giữ trong bộ nhớ.
 - Refresh token: chuỗi ngẫu nhiên, sống **7 ngày**, trả trong **JSON body** (không dùng cookie); DB lưu SHA-256. Rotation một lần dùng như mục 4.
 - Mật khẩu băm bằng **bcrypt** (`golang.org/x/crypto/bcrypt`, cost mặc định 10). Lý do: thư viện chuẩn của hệ sinh thái Go, có sẵn salt, đủ cho ~50 tài khoản trên LAN; không cần tinh chỉnh tham số bộ nhớ như argon2id. Giới hạn bcrypt 72 byte nên mật khẩu tối đa 72 byte.
@@ -364,9 +363,20 @@ Người dùng duyệt các quyết định dưới đây. Danh sách endpoint c
 
 Các lựa chọn dưới đây do agent đề xuất khi triển khai, **cần người dùng xác nhận**:
 
-- Import CSV: dòng lỗi (thiếu/quá dài, trùng trong file) từ chối cả file; `code` đã có trong DB thì bỏ qua và báo lại. Cột `class` bị bỏ qua vì bảng `students` không có cột lớp.
+- Import CSV: dòng lỗi (thiếu/quá dài, trùng trong file) từ chối cả file; `code` đã có trong DB thì bỏ qua và báo lại. Cột `class` bị bỏ qua vì bảng tài khoản không có cột lớp.
 - Giáo viên chỉ thấy đề của mình (404 với đề của giáo viên khác).
 - Xóa đề chỉ khi đề không còn problem và phiên; xóa phiên/problem bị chặn nếu đã có bài nộp. Xóa problem không xóa file test trên đĩa.
 - Sinh viên phải **tham gia phiên** mới xem được nội dung đề; danh sách problem (mã, tên) hiện từ `starts_at`. Đề vẫn xem được sau khi phiên kết thúc.
 - Mã problem trim + viết hoa; `time_limit_ms` 1–10000, `memory_limit_mb` 1–1024.
 - Phần tạo lượt chấm lại khi tăng version (`requeueProblem`) là stub cho tới bước submission + judge.
+
+## 18. Gộp tài khoản vào bảng `users` (22/10/2026)
+
+Người dùng quyết định ("gộp đi") gộp `teachers` và `students` thành **một bảng `users`**. Thay các quyết định ở mục 4 (hai bảng, `code` duy nhất trong từng bảng) và mục 17 (login có `role` trong body).
+
+- `users(id, code UNIQUE, fullname, role CHECK IN ('teacher','student'), password_hash, created_at, updated_at)`; giữ nguyên ràng buộc cũ của `code`/`fullname`. Tên cột họ tên vẫn là `fullname` như các API hiện có.
+- `code` **duy nhất trên toàn bộ tài khoản**: tạo sinh viên trùng mã giáo viên → 409; import CSV bỏ qua dòng đó với lý do `code belongs to a teacher account`.
+- Login: `POST /api/v1/auth/login {code, password}`. Vai trò đọc từ `users.role` và ghi vào claim `role` của JWT.
+- FK đổi đích: `exams.teacher_id → users`, `exam_participants.student_id → users`; `refresh_tokens` chỉ còn `user_id NOT NULL` (bỏ `teacher_id`/`student_id` và CHECK chọn một). Index mới: `users_role_code_idx (role, code)`, `refresh_tokens_user_idx (user_id)` (thay hai index refresh token cũ) — vẫn 13 index bổ sung.
+- **Ràng buộc vai trò nằm ở tầng service, không có trigger/CHECK chéo bảng**: `exams.teacher_id` luôn lấy từ JWT đã qua `RequireRole(teacher)`, `exam_participants.student_id` từ JWT đã qua `RequireRole(student)`; truy vấn quản lý sinh viên luôn lọc `role = 'student'`. Không có API đổi `role`.
+- `migrations/00001_init.sql` và `database/schema-design.sql` được sửa trực tiếp (chưa có dữ liệu thật); DB dev được xóa volume `pgdata` và tạo lại.

@@ -16,20 +16,30 @@ type fakeRepo struct {
 	revoked  map[int64]int
 	nextID   int64
 	failCode string // Import fails when it reaches this code (rollback test)
+	// teacherCodes are users with role teacher: codes are unique across
+	// roles, but teachers never show up as students.
+	teacherCodes map[string]bool
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{byID: map[int64]*Student{}, hashes: map[int64]string{}, revoked: map[int64]int{}}
+	return &fakeRepo{byID: map[int64]*Student{}, hashes: map[int64]string{}, revoked: map[int64]int{},
+		teacherCodes: map[string]bool{}}
 }
 
-func (f *fakeRepo) codeTaken(code string) bool {
+// codeRole returns the role of the user holding code, or "" if free.
+func (f *fakeRepo) codeRole(code string) string {
+	if f.teacherCodes[code] {
+		return "teacher"
+	}
 	for _, s := range f.byID {
 		if s.Code == code {
-			return true
+			return "student"
 		}
 	}
-	return false
+	return ""
 }
+
+func (f *fakeRepo) codeTaken(code string) bool { return f.codeRole(code) != "" }
 
 func (f *fakeRepo) insert(n NewStudent) Student {
 	f.nextID++
@@ -76,7 +86,7 @@ func (f *fakeRepo) List(_ context.Context, q string, limit, offset int) ([]Stude
 	return all[offset:end], total, nil
 }
 
-func (f *fakeRepo) Import(_ context.Context, rows []NewStudent) ([]Student, []string, error) {
+func (f *fakeRepo) Import(_ context.Context, rows []NewStudent) ([]Student, []ExistingCode, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// Validate first so a failure leaves nothing behind, like a rolled-back tx.
@@ -86,10 +96,10 @@ func (f *fakeRepo) Import(_ context.Context, rows []NewStudent) ([]Student, []st
 		}
 	}
 	var created []Student
-	var skipped []string
+	var skipped []ExistingCode
 	for _, n := range rows {
-		if f.codeTaken(n.Code) {
-			skipped = append(skipped, n.Code)
+		if role := f.codeRole(n.Code); role != "" {
+			skipped = append(skipped, ExistingCode{Code: n.Code, Role: role})
 			continue
 		}
 		created = append(created, f.insert(n))
@@ -159,6 +169,30 @@ func TestCreateDuplicate(t *testing.T) {
 	}
 	if _, err := svc.Create(ctx, "sv01", "B"); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("err = %v, want ErrAlreadyExists", err)
+	}
+}
+
+func TestCreateWithTeacherCodeConflicts(t *testing.T) {
+	repo := newFakeRepo()
+	repo.teacherCodes["GV01"] = true
+	svc := NewService(repo, fakeHasher{})
+	if _, err := svc.Create(context.Background(), "gv01", "X"); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("err = %v, want ErrAlreadyExists", err)
+	}
+}
+
+func TestImportReportsTeacherCode(t *testing.T) {
+	repo := newFakeRepo()
+	repo.teacherCodes["GV01"] = true
+	svc := NewService(repo, fakeHasher{})
+	res, err := svc.Import(context.Background(), strings.NewReader("code,full_name\nSV01,A\nGV01,B\n"))
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if len(res.Created) != 1 || len(res.Skipped) != 1 ||
+		res.Skipped[0].Code != "GV01" || res.Skipped[0].Line != 3 ||
+		res.Skipped[0].Reason != "code belongs to a teacher account" {
+		t.Fatalf("result = %+v", res)
 	}
 }
 

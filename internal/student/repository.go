@@ -30,7 +30,9 @@ func scanStudent(row pgx.Row) (Student, error) {
 	return s, err
 }
 
-const insertStudent = `INSERT INTO students (code, fullname, password_hash) VALUES ($1, $2, $3)
+// Codes are unique across all users, so a code held by a teacher also
+// conflicts.
+const insertStudent = `INSERT INTO users (code, fullname, role, password_hash) VALUES ($1, $2, 'student', $3)
 	ON CONFLICT (code) DO NOTHING RETURNING ` + studentColumns
 
 func (r *pgRepository) Create(ctx context.Context, n NewStudent) (Student, error) {
@@ -42,20 +44,21 @@ func (r *pgRepository) Create(ctx context.Context, n NewStudent) (Student, error
 }
 
 func (r *pgRepository) Get(ctx context.Context, id int64) (Student, error) {
-	return scanStudent(r.pool.QueryRow(ctx, `SELECT `+studentColumns+` FROM students WHERE id = $1`, id))
+	return scanStudent(r.pool.QueryRow(ctx,
+		`SELECT `+studentColumns+` FROM users WHERE id = $1 AND role = 'student'`, id))
 }
 
 func (r *pgRepository) List(ctx context.Context, query string, limit, offset int) ([]Student, int, error) {
 	// Escape LIKE wildcards so the search is a plain substring match.
 	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query) + "%"
-	const where = ` WHERE code ILIKE $1 OR fullname ILIKE $1`
+	const where = ` WHERE role = 'student' AND (code ILIKE $1 OR fullname ILIKE $1)`
 
 	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM students`+where, pattern).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM users`+where, pattern).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx,
-		`SELECT `+studentColumns+` FROM students`+where+` ORDER BY code, id LIMIT $2 OFFSET $3`,
+		`SELECT `+studentColumns+` FROM users`+where+` ORDER BY code, id LIMIT $2 OFFSET $3`,
 		pattern, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -72,15 +75,19 @@ func (r *pgRepository) List(ctx context.Context, query string, limit, offset int
 	return out, total, rows.Err()
 }
 
-func (r *pgRepository) Import(ctx context.Context, in []NewStudent) ([]Student, []string, error) {
+func (r *pgRepository) Import(ctx context.Context, in []NewStudent) ([]Student, []ExistingCode, error) {
 	var created []Student
-	var skipped []string
+	var skipped []ExistingCode
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		created, skipped = nil, nil
 		for _, n := range in {
 			s, err := scanStudent(tx.QueryRow(ctx, insertStudent, n.Code, n.Fullname, n.PasswordHash))
 			if errors.Is(err, ErrNotFound) {
-				skipped = append(skipped, n.Code)
+				ex := ExistingCode{Code: n.Code}
+				if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE code = $1`, n.Code).Scan(&ex.Role); err != nil {
+					return err
+				}
+				skipped = append(skipped, ex)
 				continue
 			}
 			if err != nil {
@@ -99,7 +106,8 @@ func (r *pgRepository) Import(ctx context.Context, in []NewStudent) ([]Student, 
 func (r *pgRepository) ResetPassword(ctx context.Context, id int64, passwordHash string) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		var locked int64
-		err := tx.QueryRow(ctx, `SELECT id FROM students WHERE id = $1 FOR UPDATE`, id).Scan(&locked)
+		err := tx.QueryRow(ctx,
+			`SELECT id FROM users WHERE id = $1 AND role = 'student' FOR UPDATE`, id).Scan(&locked)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -107,11 +115,11 @@ func (r *pgRepository) ResetPassword(ctx context.Context, id int64, passwordHash
 			return err
 		}
 		if _, err := tx.Exec(ctx,
-			`UPDATE students SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+			`UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
 			passwordHash, id); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE student_id = $1`, id)
+		_, err = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE user_id = $1`, id)
 		return err
 	})
 }

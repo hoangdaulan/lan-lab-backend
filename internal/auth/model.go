@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Role is the account type. Teachers and students live in separate tables, so
-// the role is part of every account lookup (BACKEND_CONTEXT.md §4).
+// Role is the account type, stored in users.role. Login reads it from the DB
+// and puts it in the JWT (BACKEND_CONTEXT.md §18).
 type Role string
 
 const (
@@ -43,8 +43,8 @@ type Tokens struct {
 }
 
 var (
-	// ErrInvalidCredentials covers unknown code, wrong password and wrong
-	// role alike, so the response does not reveal which accounts exist.
+	// ErrInvalidCredentials covers unknown code and wrong password alike, so
+	// the response does not reveal which accounts exist.
 	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrInvalidRefreshToken = errors.New("invalid refresh token")
 	ErrInvalidAccessToken  = errors.New("invalid access token")

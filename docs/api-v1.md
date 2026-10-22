@@ -23,7 +23,7 @@ Ngày chốt: **21/10/2026**. Quyết định nền: `BACKEND_CONTEXT.md` mục 
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| POST | `/auth/login` | — | `{role, code, password}` → access + refresh token | ✅ |
+| POST | `/auth/login` | — | `{code, password}`; vai trò lấy từ DB → access + refresh token | ✅ |
 | POST | `/auth/refresh` | — | `{refresh_token}` → cặp token mới; token cũ chỉ dùng được 1 lần | ✅ |
 | POST | `/auth/logout` | — | `{refresh_token}` → xóa refresh token đó | ✅ |
 | GET | `/me` | T/S | Thông tin tài khoản hiện tại | ✅ |
@@ -123,15 +123,15 @@ Mọi lỗi trả `{"error": "<message>"}`.
 
 | HTTP | Khi nào |
 |---|---|
-| 400 | Body sai JSON, thiếu trường, `role` không hợp lệ, mật khẩu mới không hợp lệ |
-| 401 | Sai `code`/mật khẩu/role, access token thiếu/hết hạn/sai, refresh token không tồn tại/hết hạn/đã dùng |
+| 400 | Body sai JSON, thiếu trường, mật khẩu mới không hợp lệ |
+| 401 | Sai `code`/mật khẩu, access token thiếu/hết hạn/sai, refresh token không tồn tại/hết hạn/đã dùng |
 | 403 | Đúng token nhưng sai vai trò cho route |
 
 ### `POST /auth/login`
 
 ```json
 // request
-{"role": "student", "code": "B21DCCN001", "password": "B21DCCN001"}
+{"code": "B21DCCN001", "password": "B21DCCN001"}
 // 200
 {
   "access_token": "<jwt>",
@@ -177,7 +177,7 @@ Mọi route yêu cầu access token của **giáo viên** (403 nếu là sinh vi
 
 ### `POST /students`
 
-Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã tồn tại.
+Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã thuộc một tài khoản khác (kể cả giáo viên).
 
 ### `GET /students?q=&limit=50&offset=0`
 
@@ -203,9 +203,10 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 - **`code` đã có trong DB**: bỏ qua dòng đó và báo lại (import lại cùng danh sách là an toàn). Các dòng còn lại được thêm trong một transaction.
 
 ```json
-{"created_count": 2, "skipped_count": 1,
+{"created_count": 2, "skipped_count": 2,
  "created": [ ...đối tượng sinh viên... ],
- "skipped": [{"line": 3, "code": "SV02", "reason": "already exists"}]}
+ "skipped": [{"line": 3, "code": "SV02", "reason": "already exists"},
+             {"line": 4, "code": "GV01", "reason": "code belongs to a teacher account"}]}
 ```
 
 ### `POST /students/{id}/reset-password`

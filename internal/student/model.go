@@ -29,15 +29,21 @@ type NewStudent struct {
 	PasswordHash string
 }
 
+// ExistingCode is an import row skipped because a user already has the code.
+type ExistingCode struct {
+	Code string
+	Role string // "student" or "teacher"
+}
+
 var (
 	ErrInvalidInput  = errors.New("invalid input")
 	ErrNotFound      = errors.New("student not found")
-	ErrAlreadyExists = errors.New("student code already exists")
+	ErrAlreadyExists = errors.New("code already used by another account")
 )
 
 const (
-	maxCodeLen     = 50  // students.code varchar(50)
-	maxFullnameLen = 200 // students.fullname varchar(200)
+	maxCodeLen     = 50  // users.code varchar(50)
+	maxFullnameLen = 200 // users.fullname varchar(200)
 )
 
 // normalize trims/upper-cases the code (same rule as login) and trims the

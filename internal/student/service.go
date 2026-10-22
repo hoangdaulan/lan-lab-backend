@@ -11,15 +11,17 @@ import (
 
 // Repository is the persistence boundary for students.
 type Repository interface {
-	// Create returns ErrAlreadyExists if the code is taken.
+	// Create inserts a users row with role student. It returns
+	// ErrAlreadyExists if any user (teacher or student) has the code.
 	Create(ctx context.Context, s NewStudent) (Student, error)
+	// Get, List and ResetPassword only see role = student rows.
 	Get(ctx context.Context, id int64) (Student, error)
 	// List filters by case-insensitive substring of code or fullname.
 	List(ctx context.Context, query string, limit, offset int) ([]Student, int, error)
 	// Import inserts all rows in one transaction. Rows whose code already
-	// exists are skipped and their codes returned; any other error rolls
-	// everything back.
-	Import(ctx context.Context, rows []NewStudent) (created []Student, skippedCodes []string, err error)
+	// exists are skipped and returned with the existing user's role; any
+	// other error rolls everything back.
+	Import(ctx context.Context, rows []NewStudent) (created []Student, skipped []ExistingCode, err error)
 	// ResetPassword sets the hash and deletes all refresh tokens of the
 	// student in one transaction (lock order account -> refresh_token).
 	ResetPassword(ctx context.Context, id int64, passwordHash string) error
@@ -127,7 +129,7 @@ type ImportResult struct {
 
 // Import reads a CSV with a header row containing "code" and "full_name"
 // (or "fullname"); other columns such as "class" are ignored because the
-// students table has no such column.
+// users table has no such column.
 //
 // Policy: the import is all-or-nothing for invalid rows (missing/too long
 // fields, a code repeated inside the file) — any such row rejects the whole
@@ -139,7 +141,7 @@ func (s *Service) Import(ctx context.Context, r io.Reader) (ImportResult, error)
 		return ImportResult{}, err
 	}
 
-	created, skippedCodes, err := s.repo.Import(ctx, rows)
+	created, existing, err := s.repo.Import(ctx, rows)
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -148,8 +150,12 @@ func (s *Service) Import(ctx context.Context, r io.Reader) (ImportResult, error)
 		lineOf[row.Code] = lines[i]
 	}
 	res := ImportResult{Created: created}
-	for _, code := range skippedCodes {
-		res.Skipped = append(res.Skipped, SkippedRow{Line: lineOf[code], Code: code, Reason: "already exists"})
+	for _, ex := range existing {
+		reason := "already exists"
+		if ex.Role == "teacher" {
+			reason = "code belongs to a teacher account"
+		}
+		res.Skipped = append(res.Skipped, SkippedRow{Line: lineOf[ex.Code], Code: ex.Code, Reason: reason})
 	}
 	return res, nil
 }

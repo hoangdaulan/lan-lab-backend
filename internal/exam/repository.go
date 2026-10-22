@@ -176,7 +176,7 @@ func (r *pgRepository) DeleteSession(ctx context.Context, id int64) error {
 // ---- participants ----
 
 const participantSelect = `SELECT p.id, p.exam_session_id, p.student_id, st.code, st.fullname,
-	p.status, p.joined_at, p.finished_at FROM exam_participants p JOIN students st ON st.id = p.student_id`
+	p.status, p.joined_at, p.finished_at FROM exam_participants p JOIN users st ON st.id = p.student_id`
 
 func scanParticipant(row pgx.Row) (Participant, error) {
 	var p Participant
