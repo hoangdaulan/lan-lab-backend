@@ -22,7 +22,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 2 | Schema DB, migration, gộp bảng `users` | ✅ xong |
 | 3 | Auth (JWT, refresh token) | ✅ xong |
 | 4 | Quản lý sinh viên | ✅ xong |
-| 5 | Đề, phiên, tham gia | kiểm chứng |
+| 5 | Đề, phiên, tham gia | ✅ xong |
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | kiểm chứng |
 | 7 | Nộp bài | chưa làm |
 | 8 | Hàng đợi chấm bền vững | chưa làm |
@@ -203,14 +203,14 @@ scripts/smoke.sh students
 - Giờ server quyết định: `starts_at <= now < ends_at`; `ends_at > starts_at` bắt buộc, backend không tự đặt thời lượng.
 
 **Checklist**
-- [ ] Unit test pass
-- [ ] Tạo phiên `ends_at <= starts_at` → 400
-- [ ] GV khác không thấy/sửa được đề → 404
-- [ ] SV thấy mọi phiên; trước giờ bắt đầu `problems_hidden = true`
-- [ ] Join trước giờ / sau giờ → 409; trong giờ → 200; join lại trả bản ghi cũ
-- [ ] Finish idempotent, `finished_at` không đổi; chưa join → 409
-- [ ] Xóa đề còn con → 409; xóa phiên có bài nộp → 409
-- [ ] `participants` hiện mã, tên, trạng thái
+- [x] Unit test pass — 22/10: `go test -race ./internal/exam/` ok (7 test)
+- [x] Tạo phiên `ends_at <= starts_at` → 400 — 22/10: `scripts/smoke.sh exams` 20/20
+- [x] GV khác không thấy/sửa được đề → 404 — 22/10: seed thêm `GV02`; đọc/sửa đề, xem participants → 404, danh sách đề của GV02 không có đề của GV01 (smoke thêm biến `SMOKE_TEACHER2_*`)
+- [x] SV thấy mọi phiên; trước giờ bắt đầu `problems_hidden = true` — 22/10: `scripts/smoke.sh exams` 20/20
+- [x] Join trước giờ / sau giờ → 409; trong giờ → 200; join lại trả bản ghi cũ — 22/10: trước giờ 409 (smoke); sau giờ 409 và mốc `ends_at` loại trừ: unit test `TestJoinOnlyWhileRunning`
+- [x] Finish idempotent, `finished_at` không đổi; chưa join → 409 — 22/10: `scripts/smoke.sh exams` 20/20
+- [x] Xóa đề còn con → 409; xóa phiên có bài nộp → 409 — 22/10: đề còn con 409 (smoke); chèn tạm 1 dòng `submissions` bằng psql → xóa phiên 409, xóa problem 409, rồi xóa dòng tạm
+- [x] `participants` hiện mã, tên, trạng thái — 22/10: `scripts/smoke.sh exams` 20/20
 
 **Kiểm tra cuối phase**
 ```bash
