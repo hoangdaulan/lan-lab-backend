@@ -20,7 +20,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 0 | Repo, công cụ, quy ước | ✅ xong (trừ sqlc) |
 | 1 | Docker Compose, cấu hình, biến môi trường | ✅ xong |
 | 2 | Schema DB, migration, gộp bảng `users` | ✅ xong |
-| 3 | Auth (JWT, refresh token) | kiểm chứng |
+| 3 | Auth (JWT, refresh token) | ✅ xong |
 | 4 | Quản lý sinh viên | kiểm chứng |
 | 5 | Đề, phiên, tham gia | kiểm chứng |
 | 6 | Problem, test trên đĩa, chấm lại (quét + tăng version) | kiểm chứng |
@@ -148,17 +148,17 @@ go test -race -count=1 ./...
 - Middleware `Authenticate`, `RequireRole`; `cmd/seed` tạo GV đầu tiên (idempotent).
 
 **Checklist**
-- [ ] Unit test service + middleware pass
-- [ ] Login đúng → 200, `user.role` lấy từ DB, JWT `alg=HS256`, `role` đúng, `exp - iat = 900`
-- [ ] Gửi `role` trong body login → 400 (trường lạ)
-- [ ] Sai mật khẩu / mã không tồn tại → 401 cùng thông báo
-- [ ] Refresh → token mới khác cũ; dùng lại token cũ → 401
-- [ ] Logout → refresh token đó 401
-- [ ] Đổi mật khẩu: sai mật khẩu hiện tại 401; đúng → 204, mọi refresh token của tài khoản bị xóa
-- [ ] `/me` không token 401; token sai chữ ký 401
-- [ ] Route GV gọi bằng token SV → 403 và ngược lại
-- [ ] DB chỉ lưu hash (`$2a$10$…`, token_hash 32 byte)
-- [ ] `make seed` chạy 2 lần: lần 2 không đổi gì
+- [x] Unit test service + middleware pass — 22/10: `go test -race ./internal/auth/` ok (16 test)
+- [x] Login đúng → 200, `user.role` lấy từ DB, JWT `alg=HS256`, `role` đúng, `exp - iat = 900` — 22/10: `scripts/smoke.sh auth` 20/20
+- [x] Gửi `role` trong body login → 400 (trường lạ) — 22/10: 400 `unknown field "role"`
+- [x] Sai mật khẩu / mã không tồn tại → 401 cùng thông báo — 22/10: smoke so sánh body giống hệt
+- [x] Refresh → token mới khác cũ; dùng lại token cũ → 401 — 22/10: `scripts/smoke.sh auth` 20/20
+- [x] Logout → refresh token đó 401 — 22/10: 204 rồi 401
+- [x] Đổi mật khẩu: sai mật khẩu hiện tại 401; đúng → 204, mọi refresh token của tài khoản bị xóa — 22/10: `scripts/smoke.sh auth` 20/20
+- [x] `/me` không token 401; token sai chữ ký 401 — 22/10: **lỗi phát hiện và sửa**: đổi ký tự cuối của chữ ký (chỉ khác bit đệm base64) vẫn được chấp nhận (200). Thêm `jwt.WithStrictDecoding()`; unit test thử mọi ký tự ở mọi vị trí chữ ký (fail khi bỏ fix, pass khi có fix); smoke giờ 401
+- [x] Route GV gọi bằng token SV → 403 và ngược lại — 22/10: `/students` bằng SV 403, `/me/sessions` bằng GV 403
+- [x] DB chỉ lưu hash (`$2a$10$…`, token_hash 32 byte) — 22/10: mọi `password_hash` bắt đầu `$2a$10$`; mọi `token_hash` dài 32 byte
+- [x] `make seed` chạy 2 lần: lần 2 không đổi gì — 22/10: `teacher already exists, nothing changed`
 
 **Kiểm tra cuối phase**
 ```bash
