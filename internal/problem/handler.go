@@ -165,6 +165,14 @@ type testCaseResponse struct {
 	Output string `json:"output"`
 }
 
+// diskResponse tells the teacher whether the files on disk match the
+// registered tests (they only take effect after POST /problems/{id}/rejudge).
+type diskResponse struct {
+	Tests  int    `json:"tests"`
+	Error  string `json:"error,omitempty"`
+	InSync bool   `json:"in_sync"`
+}
+
 func (h *Handler) listTests(w http.ResponseWriter, r *http.Request) {
 	id, err := httpx.IDParam(r, "id")
 	if err != nil {
@@ -176,11 +184,19 @@ func (h *Handler) listTests(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
+	disk, err := h.svc.DiskState(tests, id)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
 	items := make([]testCaseResponse, 0, len(tests))
 	for _, t := range tests {
 		items = append(items, testCaseResponse{ID: t.ID, Input: t.InputPath, Output: t.OutputPath})
 	}
-	httpx.WritePagedList(w, r, items, map[string]any{"test_dir": TestDir(id)})
+	httpx.WritePagedList(w, r, items, map[string]any{
+		"test_dir": TestDir(id),
+		"disk":     diskResponse{Tests: disk.Count, Error: disk.Error, InSync: disk.InSync},
+	})
 }
 
 type testFileResponse struct {
