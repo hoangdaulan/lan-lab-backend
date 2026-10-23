@@ -389,7 +389,14 @@ Từ máy khác trong LAN: `http://<IP-máy-chủ>:8080/healthz`, Swagger UI: `h
 
 ## 11.2. Start Client
 
-Frontend nằm ở repo riêng. Để thử backend:
+**Giao diện web có sẵn** (HTML/CSS/JS thuần, nhúng trong binary API, không cần Internet hay build): mở `http://<IP-máy-chủ>:8080/` trên trình duyệt của mọi máy trong LAN.
+
+* Giáo viên: quản lý sinh viên (thêm, import CSV, đặt lại mật khẩu), đề → bài (đề bài, giới hạn, thư mục test, "Quét test & chấm lại") → phiên; bảng trực tiếp `x/N AC` (online, hàng đợi), bài nộp (mã nguồn, kết quả từng test, chấm lại), thông báo, xuất CSV, trang hàng đợi.
+* Sinh viên: danh sách phiên (đếm ngược theo giờ server), tự tham gia, đề bài, ô soạn code (Tab thụt lề, số dòng, lưu nháp trên máy) hoặc chọn file `.cpp`, kết quả cập nhật trực tiếp (`đang chờ → đang chấm… → 10/15 TLE`), xem lỗi biên dịch, thông báo của GV, nút "Kết thúc làm bài".
+* Mất kết nối WebSocket → hiện "Mất kết nối", tự nối lại (1–10 s) rồi tải lại trạng thái bằng REST. Access token tự làm mới trước khi hết hạn; mỗi tab giữ phiên đăng nhập riêng (đóng tab là đăng xuất).
+* Mã nguồn: `web/static/` (`app.js` router + đăng nhập, `teacher.js`, `student.js`, `live.js` WebSocket, `api.js` REST). Sửa xong: `docker compose up -d --build --no-deps api`.
+
+Frontend chính thức (nếu có) nằm ở repo riêng. Công cụ khác để thử backend:
 
 * Swagger UI (`/swagger/index.html`): đăng nhập → Authorize `Bearer <access_token>` → gọi API.
 * `examples/api-manual.http` (REST Client của VS Code / JetBrains).
