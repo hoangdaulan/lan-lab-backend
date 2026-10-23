@@ -8,7 +8,7 @@
 - Khi chuyển vai trò giáo viên/sinh viên, thay token trong Authorize. Refresh token nhập riêng trong body của refresh/logout.
 - Import CSV: `POST /api/v1/students/import` → **Try it out** → chọn file ở trường `file`. Mẫu ở `examples/students-import.csv`.
 - Chỉnh ngày giờ trong request tạo phiên cho phù hợp lúc test; ID lấy từ response thực tế.
-- Swagger mô tả 42 thao tác REST. Worker chấm thật (g++ C++17 trong sandbox); chấm lại problem/bài nộp đã hoạt động. WebSocket `/api/v1/ws` không nằm trong Swagger (không phải REST) — xem mục "Chi tiết WebSocket"; thử bằng `go run ./cmd/wsprobe`.
+- Swagger mô tả 44 thao tác REST. Worker chấm thật (g++ C++17 trong sandbox); chấm lại problem/bài nộp đã hoạt động. WebSocket `/api/v1/ws` không nằm trong Swagger (không phải REST) — xem mục "Chi tiết WebSocket"; thử bằng `go run ./cmd/wsprobe`.
 - Đặc tả được duy trì trong `docs/swagger.json` và `docs/swagger.yaml`, nhúng vào binary bằng `docs/docs.go`. Không chạy `swag init` ghi đè khi handler chưa có annotation đầy đủ.
 - Khi sửa code/spec trong môi trường Compose, build lại API: `docker compose up -d --build --no-deps api`.
 
@@ -101,7 +101,7 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 | GET | `/ws` | T/S | WebSocket; message đầu `auth`, `subscribe` phiên; server đẩy `run.updated`, `summary.updated` (GV), `announcement`, `resync` | ✅ |
 | POST | `/sessions/{id}/announcements` | T | Gửi thông báo tới cả phiên (đẩy qua WS) | ✅ |
 | GET | `/sessions/{id}/announcements` | T/S | Thông báo của phiên (xem lại khi nối lại) | ✅ |
-| GET | `/admin/queue` | T | Số job queued/running/failed, worker đang chạy | |
+| GET | `/admin/queue` | T | Số job theo trạng thái, worker đang chạy, thời gian chờ/chấm trung bình | ✅ |
 
 Message WebSocket: JSON `{"type": string, "data": object}`. Server kiểm tra Origin. Chi tiết ở cuối tài liệu.
 
@@ -118,7 +118,7 @@ Chỉ tính run có `problem_version = problems.version`. Không có điểm s�
 
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
-| GET | `/sessions/{sid}/export.csv` | T | Xuất bảng tổng hợp AC | |
+| GET | `/sessions/{id}/export.csv` | T | Xuất bảng tổng hợp AC | ✅ |
 
 Export zip source: để sau v1.
 
@@ -374,3 +374,27 @@ Vòng đời một bài: nộp (REST 202) → `run.updated` `queued` → `judgin
 - **Ping/pong** mỗi 20 s; không có pong → server đóng (phát hiện mất mạng).
 - **Nối lại:** client mở lại kết nối, `auth` + `subscribe`, rồi tải trạng thái bằng REST (`/submissions/{id}`, `/sessions/{id}/summary`, `/announcements`). Server không gửi lại sự kiện đã lỡ.
 - **Nguồn sự kiện:** mọi chỗ đổi trạng thái run gọi `pg_notify('judge_events', ...)` trong cùng transaction (chỉ gửi sau COMMIT); API giữ một kết nối `LISTEN`, nạp lại trạng thái từ DB rồi đẩy. Mất kết nối `LISTEN` → tự nối lại (backoff 1–10 s) và gửi `resync`.
+
+## Chi tiết Export và hàng đợi
+
+### `GET /sessions/{id}/export.csv` (T, chủ đề)
+
+File `session-<id>-summary.csv`: UTF-8 **có BOM** (Excel hiển thị đúng tiếng Việt), dấu phẩy, xuống dòng CRLF.
+
+```
+student_code,fullname,status,A,B,ac
+B21DCCN001,Nguyễn Văn Ánh,finished,AC,10/15 TLE,1/2 AC
+B21DCCN002,Trần Thị B,in_progress,pending,,0/2 AC
+```
+
+Ô problem: `AC`; kết quả hiện hành của bài mới nhất (`10/15 TLE`); `pending` (đang chấm); `system_error`; trống (chưa nộp). Họ tên/mã bắt đầu bằng `= + - @` được thêm `'` để Excel không chạy như công thức.
+
+### `GET /admin/queue` (T)
+
+```json
+{"jobs": {"queued": 2, "running": 1, "done": 120, "failed": 0, "obsolete": 15},
+ "active_workers": ["7f84be079c06"], "oldest_queued_ms": 850,
+ "recent_runs": 40, "avg_queue_wait_ms": 312.5, "avg_judge_ms": 180.2, "generated_at": "..."}
+```
+
+`recent_runs`, `avg_*`: run bắt đầu trong 10 phút gần nhất (chờ = `created_at → started_at`, chấm = `started_at → finished_at` của run `completed`). Toàn hệ thống, không theo phiên.

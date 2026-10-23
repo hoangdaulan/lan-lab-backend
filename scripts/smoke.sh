@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # Smoke test HTTP cho API v1 trên stack dev đang chạy (docs/IMPLEMENTATION_PLAN.md).
 #
-#   SMOKE_TEACHER_CODE=GV01 SMOKE_TEACHER_PASSWORD=... scripts/smoke.sh [auth|students|exams|problems|submissions|judge|rejudge|ws|all]
+#   scripts/smoke.sh   (credentials from .smoke.env, or SMOKE_TEACHER_CODE=... SMOKE_TEACHER_PASSWORD=...)
+#   scripts/smoke.sh [auth|students|exams|problems|submissions|judge|rejudge|ws|summary|all]
 #
 # Biến tùy chọn: SMOKE_TEACHER2_CODE/SMOKE_TEACHER2_PASSWORD (GV thứ hai, bật kiểm
 # tra quyền sở hữu đề), BASE (mặc định http://localhost:8080), DATA_HOST_DIR (thư mục
 # ./data trên host, mặc định ./data). Mỗi lần chạy tạo dữ liệu mới (mã có hậu
 # tố thời gian) và không xóa dữ liệu cũ. Cần curl và python3.
 set -uo pipefail
+
+# Local test credentials (git-ignored), created with `make seed`.
+if [[ -f .smoke.env ]]; then
+	set -a
+	# shellcheck disable=SC1091
+	. ./.smoke.env
+	set +a
+fi
 
 BASE=${BASE:-http://localhost:8080}
 API=$BASE/api/v1
@@ -693,6 +702,54 @@ PY
 	echo "    $BODY"
 }
 
+section_summary() {
+	echo "== summary (CSV export, queue stats; needs the worker)"
+	local tt s1 s2 a="SMK${RUN}V1" b="SMK${RUN}V2"
+	tt=$(teacher_token)
+	new_student "$a" "$tt" >/dev/null
+	new_student "$b" "$tt" >/dev/null
+	s1=$(login "$a" "$a")
+	s2=$(login "$b" "$b")
+	make_exam "$tt"
+	local pa pb
+	pa=$(make_problem "$tt" A)
+	pb=$(make_problem "$tt" B)
+	req POST "/sessions/$RUNNING_ID/join" "" "$s1"
+	req POST "/sessions/$RUNNING_ID/join" "" "$s2"
+	printf '#include <cstdio>\nint main(){long long a,b;scanf("%%lld %%lld",&a,&b);printf("%%lld\\n",a+b);}\n' >"$TMP/ok.cpp"
+	printf '#include <cstdio>\nint main(){puts("0");}\n' >"$TMP/wa.cpp"
+	local x y z
+	upload "/sessions/$RUNNING_ID/problems/$pa/submissions" "$TMP/ok.cpp" "$s1"
+	x=$(jget 'd["id"]')
+	upload "/sessions/$RUNNING_ID/problems/$pb/submissions" "$TMP/wa.cpp" "$s1"
+	y=$(jget 'd["id"]')
+	upload "/sessions/$RUNNING_ID/problems/$pa/submissions" "$TMP/wa.cpp" "$s2"
+	z=$(jget 'd["id"]')
+	wait_result "$x" "$s1" && wait_result "$y" "$s1" && wait_result "$z" "$s2"
+
+	STATUS=$(curl -s -o "$TMP/board.csv" -D "$TMP/board.h" -w '%{http_code}' -H "Authorization: Bearer $tt" \
+		"$API/sessions/$RUNNING_ID/export.csv")
+	BODY=$(python3 - "$TMP/board.csv" "$TMP/board.h" "$a" "$b" <<'PY'
+import csv, io, json, sys
+raw = open(sys.argv[1], "rb").read()
+hdr = open(sys.argv[2]).read().lower()
+rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig"))))
+by = {r[0]: r for r in rows[1:]}
+print(json.dumps({"bom": raw.startswith(b"\xef\xbb\xbf"), "crlf": b"\r\n" in raw,
+  "ctype": "text/csv" in hdr, "attach": "attachment" in hdr, "header": rows[0],
+  "a": by.get(sys.argv[3]), "b": by.get(sys.argv[4])}))
+PY
+)
+	expect "CSV: BOM, CRLF, text/csv attachment" 200 'd["bom"] and d["crlf"] and d["ctype"] and d["attach"]'
+	expect "CSV: header and x/N AC per student" 200 'd["header"] == ["student_code","fullname","status","A","B","ac"] and d["a"][3:] == ["AC","0/1 WA","1/2 AC"] and d["b"][3:] == ["0/1 WA","","0/2 AC"]'
+	req GET "/sessions/$RUNNING_ID/export.csv" "" "$s1"
+	expect "student cannot export" 403
+	req GET "/admin/queue" "" "$tt"
+	expect "queue stats" 200 'set(d["jobs"]) >= {"queued","running","done","failed","obsolete"} and d["jobs"]["done"] >= 3 and d["recent_runs"] >= 3 and d["avg_judge_ms"] > 0'
+	req GET "/admin/queue" "" "$s1"
+	expect "student cannot read queue stats" 403
+}
+
 case ${1:-all} in
 auth) section_auth ;;
 students) section_students ;;
@@ -702,6 +759,7 @@ submissions) section_submissions ;;
 judge) section_judge ;;
 rejudge) section_rejudge ;;
 ws) section_ws ;;
+summary) section_summary ;;
 all)
 	section_auth
 	section_students
@@ -711,9 +769,10 @@ all)
 	section_judge
 	section_rejudge
 	section_ws
+	section_summary
 	;;
 *)
-	echo "usage: $0 [auth|students|exams|problems|submissions|judge|rejudge|ws|all]" >&2
+	echo "usage: $0 [auth|students|exams|problems|submissions|judge|rejudge|ws|summary|all]" >&2
 	exit 2
 	;;
 esac

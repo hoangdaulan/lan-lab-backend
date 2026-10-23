@@ -132,3 +132,32 @@ func TestAnnouncements(t *testing.T) {
 		t.Error("other session has announcements")
 	}
 }
+
+func TestQueueStatsMatchSQL(t *testing.T) {
+	pool := testdb.New(t)
+	testdb.NewFixture(t, pool, 2, 5)
+	q := judge.NewRepository(pool)
+	complete(t, q, judge.VerdictAC)
+	complete(t, q, judge.VerdictWA)
+	if _, err := q.Claim(context.Background(), "worker-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	st, err := board.NewRepository(pool).QueueStats(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"queued", "running", "done", "failed", "obsolete"} {
+		if n := testdb.Count(t, pool, `SELECT count(*) FROM judge_jobs WHERE status = $1`, s); st.Jobs[s] != n {
+			t.Errorf("%s: stats %d, SQL %d", s, st.Jobs[s], n)
+		}
+	}
+	if st.Jobs["queued"] != 2 || st.Jobs["running"] != 1 || st.Jobs["done"] != 2 {
+		t.Errorf("jobs = %v", st.Jobs)
+	}
+	if len(st.ActiveWorkers) != 1 || st.ActiveWorkers[0] != "worker-a" {
+		t.Errorf("active workers = %v", st.ActiveWorkers)
+	}
+	if st.RecentRuns != 3 || st.OldestQueuedMs <= 0 {
+		t.Errorf("recent=%d oldest=%d", st.RecentRuns, st.OldestQueuedMs)
+	}
+}
