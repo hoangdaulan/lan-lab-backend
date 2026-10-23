@@ -29,7 +29,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 9 | Sandbox chấm C++17 | ✅ xong |
 | 10 | Chấm lại khi đổi version + chấm lại thủ công | ✅ xong |
 | 11 | WebSocket: kết quả chấm, bảng GV, thông báo | ✅ xong |
-| 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | một phần (tổng hợp xong; còn CSV, `/admin/queue`) |
+| 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | ✅ xong |
 | 13 | Chống gian lận | ❌ không làm (Đã chốt 22/10/2026) |
 | 14 | Gia cố, kiểm thử tải ~50 SV, quan sát | chưa làm |
 | 15 | Tài liệu, báo cáo, kịch bản demo | chưa làm |
@@ -427,13 +427,20 @@ scripts/smoke.sh all    # 22/10: 122/122
 - [x] Bảng tổng hợp khớp truy vấn SQL độc lập trên dữ liệu mẫu — 22/10: làm cùng phase 11 (`TestSummaryStates`)
 - [x] Lần nộp sai/lỗi hạ tầng sau không làm mất AC cùng version — 22/10: `TestSummaryStates` (AC rồi WA mới hơn → ô vẫn `ac`, `latest` là WA)
 - [x] SV không xem được tổng hợp của SV khác — 22/10: `/summary/me` chỉ một dòng; chưa tham gia → 403; route GV → 403 (role)
-- [ ] CSV mở được bằng Excel (UTF-8 BOM, dấu phẩy, tiếng Việt)
-- [ ] `/admin/queue` số liệu khớp `SELECT status, count(*) FROM judge_jobs`
+- [x] CSV mở được bằng Excel (UTF-8 BOM, dấu phẩy, tiếng Việt) — 23/10: `TestWriteCSV` (BOM, CRLF, tiếng Việt có dấu, chống công thức `=...`); smoke trên stack thật: header `student_code,fullname,status,A,B,ac`, dòng `AC, 0/1 WA, 1/2 AC`; SV gọi → 403. Chưa mở thử bằng Excel thật (không có Excel trên máy)
+- [x] `/admin/queue` số liệu khớp `SELECT status, count(*) FROM judge_jobs` — 23/10: `TestQueueStatsMatchSQL` (5 trạng thái khớp SQL, worker giữ lease, run gần đây); smoke: `done ≥ 3`, `avg_judge_ms > 0`; SV → 403
+
+- [x] Swagger + `docs/api-v1.md` — 23/10: 44 thao tác
 
 **Kiểm tra cuối phase**
 ```bash
-scripts/smoke.sh summary
+go test -race -count=1 ./internal/board/
+make test-integration
+scripts/smoke.sh summary   # 23/10: 5/5
+scripts/smoke.sh all       # 23/10: 127/127
 ```
+
+Thông tin đăng nhập cho smoke test nằm trong `.smoke.env` (git-ignore, tạo bằng `make seed`).
 
 ---
 

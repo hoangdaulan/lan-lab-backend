@@ -2964,6 +2964,111 @@
           "application/json"
         ]
       }
+    },
+    "/api/v1/sessions/{id}/export.csv": {
+      "get": {
+        "tags": [
+          "Tổng hợp (GV)"
+        ],
+        "summary": "Xuất bảng tổng hợp CSV",
+        "operationId": "get__api_v1_sessions_id_export_csv",
+        "description": "CSV UTF-8 có BOM (mở thẳng bằng Excel), phân cách dấu phẩy, CRLF. Cột: student_code, fullname, status, mỗi problem (AC / \"10/15 TLE\" / pending / system_error / trống), ac (\"x/N AC\"). Ô bắt đầu bằng = + - @ được thêm ' để chống công thức.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "ID thực tế trả về từ API, không mặc định là 1."
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Thiếu/sai/hết hạn token hoặc thông tin đăng nhập",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Không đủ quyền",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Xung đột trạng thái hoặc dữ liệu",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "200": {
+            "description": "File CSV",
+            "schema": {
+              "type": "file"
+            }
+          }
+        },
+        "produces": [
+          "text/csv"
+        ]
+      }
+    },
+    "/api/v1/admin/queue": {
+      "get": {
+        "tags": [
+          "Tổng hợp (GV)"
+        ],
+        "summary": "Thống kê hàng đợi chấm",
+        "operationId": "get__api_v1_admin_queue",
+        "description": "Số job theo trạng thái (khớp SELECT status, count(*) FROM judge_jobs), worker đang giữ lease, tuổi job chờ lâu nhất, và trong 10 phút gần nhất: số run đã bắt đầu, thời gian chờ hàng đợi và thời gian chấm trung bình (ms).",
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Thiếu/sai/hết hạn token hoặc thông tin đăng nhập",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Không đủ quyền",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Xung đột trạng thái hoặc dữ liệu",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "200": {
+            "description": "Thành công",
+            "schema": {
+              "$ref": "#/definitions/QueueStats"
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -3646,6 +3751,39 @@
           "type": "string"
         },
         "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "QueueStats": {
+      "type": "object",
+      "properties": {
+        "jobs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "active_workers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "oldest_queued_ms": {
+          "type": "integer"
+        },
+        "recent_runs": {
+          "type": "integer"
+        },
+        "avg_queue_wait_ms": {
+          "type": "number"
+        },
+        "avg_judge_ms": {
+          "type": "number"
+        },
+        "generated_at": {
           "type": "string",
           "format": "date-time"
         }

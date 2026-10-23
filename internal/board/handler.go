@@ -1,6 +1,7 @@
 package board
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -20,7 +21,9 @@ func NewHandler(svc *Service, log *slog.Logger) *Handler { return &Handler{svc: 
 // RegisterTeacher adds teacher-only routes.
 func (h *Handler) RegisterTeacher(r chi.Router) {
 	r.Get("/sessions/{id}/summary", h.teacherSummary)
+	r.Get("/sessions/{id}/export.csv", h.exportCSV)
 	r.Post("/sessions/{id}/announcements", h.announce)
+	r.Get("/admin/queue", h.queue)
 }
 
 // RegisterStudent adds student-only routes.
@@ -98,4 +101,32 @@ func (h *Handler) listAnnouncements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"data": list})
+}
+
+func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.IDParam(r, "id")
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	p, _ := auth.PrincipalFrom(r.Context())
+	sum, err := h.svc.TeacherSummary(r.Context(), p.ID, id)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="session-%d-summary.csv"`, id))
+	if err := WriteCSV(w, sum); err != nil {
+		h.log.Error("write csv", "session_id", id, "err", err)
+	}
+}
+
+func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
+	st, err := h.svc.Repo().QueueStats(r.Context())
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, st)
 }
