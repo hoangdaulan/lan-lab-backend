@@ -41,6 +41,14 @@ type TestCase struct {
 	OutputPath string
 }
 
+// DiskTests compares the test directory on disk with the registered tests,
+// so the teacher sees files that were copied but not scanned yet.
+type DiskTests struct {
+	Count  int    // valid .in/.out pairs on disk (0 when Error is set)
+	Error  string // why a scan would fail now, e.g. "1.in has no 1.out"
+	InSync bool   // same pairs as the registered tests (contents are not compared)
+}
+
 // TestFile is one .in/.out pair found on disk.
 type TestFile struct {
 	Name       string // base name without extension, e.g. "1"

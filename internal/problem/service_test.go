@@ -351,3 +351,47 @@ func TestForStudentVisibility(t *testing.T) {
 		t.Fatalf("problem of another exam err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestDiskStateReportsUnscannedFiles(t *testing.T) {
+	svc, _, dataDir, _ := newTestService(t)
+	ctx := context.Background()
+	p, err := svc.Create(ctx, teacherA, examID, validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(dataDir, TestDir(p.ID))
+	state := func() DiskTests {
+		t.Helper()
+		reg, err := svc.ListTests(ctx, teacherA, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := svc.DiskState(reg, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+
+	if d := state(); d.Count != 0 || d.Error == "" || d.InSync {
+		t.Errorf("empty dir: %+v", d)
+	}
+	writeFiles(t, dir, map[string]string{"1.in": "1", "1.out": "1"})
+	if d := state(); d.Count != 1 || d.Error != "" || d.InSync {
+		t.Errorf("copied, not scanned: %+v", d)
+	}
+	if _, _, _, err := svc.Rejudge(ctx, teacherA, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if d := state(); d.Count != 1 || !d.InSync {
+		t.Errorf("after scan: %+v", d)
+	}
+	writeFiles(t, dir, map[string]string{"2.in": "2"})
+	if d := state(); d.Error == "" || d.InSync {
+		t.Errorf("2.in without 2.out: %+v", d)
+	}
+	writeFiles(t, dir, map[string]string{"2.out": "2"})
+	if d := state(); d.Count != 2 || d.InSync {
+		t.Errorf("new pair not scanned: %+v", d)
+	}
+}

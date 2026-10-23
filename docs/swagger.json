@@ -2121,6 +2121,24 @@
                 },
                 "test_dir": {
                   "type": "string"
+                },
+                "disk": {
+                  "type": "object",
+                  "description": "Thư mục test trên đĩa so với test đã đăng ký; file mới chỉ có hiệu lực sau POST /problems/{id}/rejudge",
+                  "properties": {
+                    "tests": {
+                      "type": "integer",
+                      "description": "Số cặp .in/.out hợp lệ trên đĩa"
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Lý do quét sẽ thất bại (ví dụ thiếu .out); không có nếu hợp lệ"
+                    },
+                    "in_sync": {
+                      "type": "boolean",
+                      "description": "Cùng danh sách cặp test với DB (không so nội dung)"
+                    }
+                  }
                 }
               }
             }

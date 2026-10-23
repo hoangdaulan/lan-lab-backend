@@ -34,15 +34,33 @@ export function toast(msg, kind = '') {
   setTimeout(() => t.remove(), kind === 'error' ? 7000 : 4000);
 }
 
+// Vietnamese text for the errors students and teachers hit most; anything
+// else is shown as the server sent it.
 const MSG = {
   'invalid code or password': 'Sai mã hoặc mật khẩu',
   'session has not started': 'Phiên chưa bắt đầu',
+  'the session has not started': 'Phiên chưa bắt đầu',
   'session has ended': 'Phiên đã kết thúc',
+  'the session has ended': 'Phiên đã hết giờ, không nộp được nữa',
   'join the session first': 'Bạn cần tham gia phiên trước',
+  'join the session before submitting': 'Bạn cần tham gia phiên trước khi nộp',
+  'you have not joined this session': 'Bạn chưa tham gia phiên này',
+  'you have finished this session': 'Bạn đã kết thúc làm bài, không nộp thêm được',
+  'the problem has no tests yet': 'Bài này chưa có test, hãy báo giáo viên',
+  'the statement is available from the session start time': 'Đề sẽ hiện khi phiên bắt đầu',
+  'only .cpp files are accepted': 'Chỉ nhận file .cpp',
+  'the file is empty': 'File rỗng',
+  'the file is larger than 64 KB': 'File lớn hơn 64 KB',
+  "delete the exam's problems and sessions first": 'Xóa hết bài và phiên của đề trước',
+  'session has submissions and cannot be deleted': 'Phiên đã có bài nộp nên không xóa được',
+  'ends_at must be after starts_at': 'Giờ kết thúc phải sau giờ bắt đầu',
 };
+// Server errors look like "conflict: the session has ended" (apperr kind first).
+const KIND = /^(invalid input|not found|conflict|forbidden|too large): /;
 export function errText(e) {
   const m = e && e.message ? e.message : String(e);
-  return MSG[m] || m;
+  const bare = m.replace(KIND, '');
+  return MSG[bare] || bare;
 }
 export function showError(e) {
   console.error(e);

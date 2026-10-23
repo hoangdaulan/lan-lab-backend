@@ -2,6 +2,7 @@ package problem
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -135,6 +136,32 @@ func (s *Service) ListTests(ctx context.Context, teacherID, problemID int64) ([]
 		return nil, err
 	}
 	return s.repo.ListTests(ctx, problemID)
+}
+
+// DiskState scans the test directory without changing anything and compares
+// it with the registered tests.
+func (s *Service) DiskState(registered []TestCase, problemID int64) (DiskTests, error) {
+	files, err := ScanTests(s.dataDir, TestDir(problemID))
+	if errors.Is(err, apperr.ErrConflict) {
+		return DiskTests{Error: err.Error()}, nil
+	}
+	if err != nil {
+		return DiskTests{}, err
+	}
+	d := DiskTests{Count: len(files), InSync: len(files) == len(registered)}
+	if d.InSync {
+		reg := make(map[[2]string]bool, len(registered))
+		for _, t := range registered {
+			reg[[2]string{t.InputPath, t.OutputPath}] = true
+		}
+		for _, f := range files {
+			if !reg[[2]string{f.InputPath, f.OutputPath}] {
+				d.InSync = false
+				break
+			}
+		}
+	}
+	return d, nil
 }
 
 // Rejudge re-reads the test directory, replaces test_cases, bumps the

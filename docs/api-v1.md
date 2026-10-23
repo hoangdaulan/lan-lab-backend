@@ -264,7 +264,7 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 - Problem: `{id, exam_id, code, title, statement, time_limit_ms, memory_limit_mb, version, test_dir, created_at, updated_at}`. `test_dir` là thư mục test tương đối với `DATA_DIR` (trên máy server: `./data/problems/<id>/tests`), được tạo khi tạo problem.
 - `PUT /problems/{id}` → `{"problem": ..., "rejudge_queued": bool, "requeued_submissions": n}`. Đổi `time_limit_ms` hoặc `memory_limit_mb` → `version + 1` và chấm lại mọi bài nộp (`rejudge_queued: true`); chỉ sửa chữ thì không.
 - `DELETE /problems/{id}` → 204 (xóa luôn các dòng `test_cases`; file test trên đĩa giữ nguyên); 409 nếu đã có bài nộp.
-- `GET /problems/{id}/tests` → `PagedList<{id, input, output}>` kèm `test_dir` theo thứ tự chấm.
+- `GET /problems/{id}/tests` → `PagedList<{id, input, output}>` kèm `test_dir` theo thứ tự chấm và `disk: {tests, error?, in_sync}` — trạng thái thư mục test trên đĩa (chỉ đọc): số cặp hợp lệ, lý do quét sẽ lỗi (thiếu `.out`...), và có trùng danh sách test đã đăng ký không (không so nội dung). `in_sync = false` nghĩa là đã chép file nhưng chưa bấm chấm lại.
 - `POST /problems/{id}/rejudge` → quét `test_dir`:
   - mỗi `N.in` phải có `N.out` và ngược lại; file rỗng hợp lệ; file khác đuôi và file ẩn bị bỏ qua; symlink/thư mục con bị từ chối; tối đa 500 test;
   - thứ tự: tên là số thì theo số (`2` trước `10`), còn lại theo tên;

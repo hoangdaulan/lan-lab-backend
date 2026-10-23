@@ -152,14 +152,14 @@ async function examPage(root, [id]) {
 
     <h2>Bài (problem)</h2>
     <div class="panel">
-      <table><tr><th>Mã</th><th>Tên</th><th>Giới hạn</th><th>Version</th><th>Thư mục test trên máy chủ</th><th></th></tr>
+      <table><tr><th>Mã</th><th>Tên</th><th>Giới hạn</th><th>Version</th><th>Test</th><th>Thư mục test trên máy chủ</th><th></th></tr>
       ${problems.data.map((p) => html`<tr>
         <td><b>${p.code}</b></td><td>${p.title}</td><td class="small">${p.time_limit_ms} ms · ${p.memory_limit_mb} MB</td>
-        <td>v${p.version}</td><td><code class="small">./data/${p.test_dir}</code></td>
+        <td>v${p.version}</td><td class="small" data-teststate="${p.id}">…</td><td><code class="small">./data/${p.test_dir}</code></td>
         <td class="row"><button data-edit="${p.id}">Sửa</button><button data-tests="${p.id}">Test</button>
           <button class="primary" data-rejudge="${p.id}" data-code="${p.code}">Quét test &amp; chấm lại</button>
           <button class="danger" data-del="${p.id}" data-code="${p.code}">Xóa</button></td></tr>`)}
-      ${problems.data.length ? '' : html`<tr><td colspan="6" class="muted">Chưa có bài</td></tr>`}
+      ${problems.data.length ? '' : html`<tr><td colspan="7" class="muted">Chưa có bài</td></tr>`}
       </table>
       <p><button class="primary" id="new-problem">+ Thêm bài</button></p>
       <p class="muted small">Sau khi tạo bài: chép <code>1.in, 1.out, 2.in, 2.out…</code> vào thư mục test trên máy chủ rồi bấm
@@ -180,6 +180,11 @@ async function examPage(root, [id]) {
     </div>`);
 
   const reload = () => examPage(root, [id]).catch(showError);
+  for (const p of problems.data) {
+    get(`/problems/${p.id}/tests`, { pageSize: 200 })
+      .then((r) => mount(root.querySelector(`[data-teststate="${p.id}"]`), testState(r)))
+      .catch(() => {});
+  }
   const byId = (list, pid) => list.data.find((x) => String(x.id) === String(pid));
 
   $('#exam').onsubmit = (e) => {
@@ -220,6 +225,19 @@ async function examPage(root, [id]) {
       busy(b, async () => { await del(`/sessions/${d.sdel}`); reload(); });
     }
   };
+}
+
+// Registered tests vs. the files on disk (GET /problems/{id}/tests "disk").
+function testState(r) {
+  const n = r.data.length, d = r.disk || {};
+  const scan = 'bấm "Quét test & chấm lại"';
+  if (n === 0) {
+    if (d.tests > 0) return html`<span class="badge bad">Chưa có test</span><div class="errors">Có ${d.tests} cặp file chưa quét — ${scan}</div>`;
+    return html`<span class="badge bad">Chưa có test</span><div class="errors">Chép file vào thư mục rồi ${scan}${d.error ? html`<br><span class="muted">${errText({ message: d.error })}</span>` : ''}</div>`;
+  }
+  if (d.in_sync) return html`<span class="badge ok">${n} test</span>`;
+  if (d.error) return html`<span class="badge wait">${n} test</span><div class="errors">Thư mục đang lỗi, quét sẽ thất bại:<br>${errText({ message: d.error })}</div>`;
+  return html`<span class="badge wait">${n} test</span><div class="errors">Trên đĩa có ${d.tests} cặp khác với test đang dùng — ${scan}</div>`;
 }
 
 function problemForm(examId, p, done) {
