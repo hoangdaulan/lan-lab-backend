@@ -12,13 +12,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 3s
       retries: 10
-    # Host database tools use 127.0.0.1:5433. The web bridge permits host
+    # Host database tools use 127.0.0.1:${DB_PORT:-5433}. The web bridge permits host
     # port publishing; api/worker keep using postgres:5432 on the db network.
     networks: [db, web]
 
@@ -62,6 +62,7 @@ services:
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       WORKER_LISTEN: ${WORKER_LISTEN:-true}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+      WORKER_LEASE: ${WORKER_LEASE:-60s}
     # Root inside the container with only the capabilities the sandbox needs
     # (BACKEND_CONTEXT.md §19): SYS_ADMIN for a new network namespace per
     # program, SETUID/SETGID to run it as runner uid 20000+slot, CHOWN/FOWNER

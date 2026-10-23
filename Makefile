@@ -36,7 +36,7 @@ test:
 # and drops its own database.
 test-integration:
 	set -a && . ./.env && set +a && \
-	TEST_DATABASE_URL="postgres://$$POSTGRES_USER:$$POSTGRES_PASSWORD@127.0.0.1:5433/$$POSTGRES_DB?sslmode=disable" \
+	TEST_DATABASE_URL="postgres://$$POSTGRES_USER:$$POSTGRES_PASSWORD@127.0.0.1:$${DB_PORT:-5433}/$$POSTGRES_DB?sslmode=disable" \
 	go test -race -count=1 -tags=integration ./internal/judge/ ./internal/problem/ ./internal/realtime/ ./internal/board/
 
 # Sandbox tests with real g++ and real limits; they need the worker

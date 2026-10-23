@@ -18,7 +18,7 @@ set -a
 . ./.env
 . ./.smoke.env
 set +a
-export LOADTEST_DB="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:5433/$POSTGRES_DB?sslmode=disable"
+export LOADTEST_DB="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:${DB_PORT:-5433}/$POSTGRES_DB?sslmode=disable"
 mkdir -p "$(dirname "$OUT")" bin
 go build -o bin/loadtest ./cmd/loadtest
 

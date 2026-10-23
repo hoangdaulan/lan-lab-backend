@@ -491,10 +491,10 @@ scripts/smoke.sh all
 - Kịch bản demo 10 phút: GV tạo đề/phiên, SV nộp AC/WA/TLE, GV sửa test → chấm lại, WebSocket cập nhật, worker chết → phục hồi.
 
 **Checklist**
-- [ ] Người ngoài làm theo README dựng được stack trên máy sạch
-- [ ] Báo cáo có số liệu thật từ phase 14
-- [ ] Demo chạy trọn kịch bản 2 lần liên tiếp không lỗi
-- [ ] Thư mục nộp đúng tên, đủ source/config/schema/README
+- [x] Người ngoài làm theo README dựng được stack trên máy sạch — clone mới vào thư mục khác, làm đúng các bước README mục 10–11 (`.env` → `make up` → `make migrate` → `make seed` → `.smoke.env` → `make smoke`): healthz OK, smoke 127/127 trên cổng 18080/15433; phát hiện và sửa trong README: thứ tự cấu hình trước `make up`, cách tạo `.smoke.env`, `COMPOSE_PROJECT_NAME` khi chạy 2 bản cùng máy (Compose lấy tên thư mục)
+- [x] Báo cáo có số liệu thật từ phase 14 — `docs/REPORT_NOTES.md` (dàn ý theo `Instruction.md` mục 8, bảng Results + Novelty có số đo) và README mục 5 (Protocol/Message Format), 14–15 trích `docs/results/RESULTS.md`
+- [x] Demo chạy trọn kịch bản 2 lần liên tiếp không lỗi — `scripts/demo-run.sh` "Demo OK" 11/11 kiểm tra, nhiều lần liên tiếp (gồm kill worker khi bài đang `judging`, phục hồi sau lease 15 s)
+- [ ] Thư mục nộp đúng tên, đủ source/config/schema/README — repo đã đủ source/config/schema/README; tên thư mục `NhomXX_TenProject_Source` và tên nhóm/GV trong README do nhóm điền khi nộp
 
 ---
 
