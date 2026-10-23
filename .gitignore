@@ -1,0 +1,34 @@
+# Secrets and local credentials (only .env.example is committed)
+.env
+*.env
+!.env.example
+.smoke.env
+.trial.env
+
+# Runtime data: submissions, problem tests, judge scratch (bind-mounted at /data)
+data/
+data.before-restore-*/
+
+# Backups made by scripts/backup.sh
+backups/
+
+# Build outputs, test and coverage files
+bin/
+*.test
+coverage.out
+*.coverprofile
+tmp/
+
+# Logs
+*.log
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -55,8 +55,8 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 - Sinh viên: `code` là MSV. Mật khẩu mặc định bằng MSV, **chỉ lưu hash**. Được đổi mật khẩu, không bắt buộc đổi lần đầu.
 - Giáo viên đăng nhập bằng mã giáo viên và mật khẩu. Cách cấp tài khoản/mật khẩu ban đầu chưa chốt.
 - Không có `username`, `is_active` hoặc `must_change_password`.
-- Tầng Go có thể dùng kiểu `User` chung cho các trường chung; DB vẫn có **hai bảng `teachers`, `students`**. Không có bảng `users` hoặc kế thừa bảng PostgreSQL.
-- `code` duy nhất **trong từng bảng**, chưa có yêu cầu duy nhất trên cả hai loại tài khoản. API cần phân biệt loại tài khoản khi đăng nhập; hình thức endpoint chưa chốt.
+- **[Đã thay thế 22/10/2026, xem mục 18]** Tầng Go có thể dùng kiểu `User` chung cho các trường chung; DB vẫn có **hai bảng `teachers`, `students`**. Không có bảng `users` hoặc kế thừa bảng PostgreSQL.
+- **[Đã thay thế 22/10/2026, xem mục 18]** `code` duy nhất **trong từng bảng**, chưa có yêu cầu duy nhất trên cả hai loại tài khoản. API cần phân biệt loại tài khoản khi đăng nhập; hình thức endpoint chưa chốt.
 - Backend phải kiểm tra vai trò, quyền sở hữu và quyền truy cập; không tin ID sinh viên do client tự khai khi nộp bài.
 - Sinh viên chỉ xem bài nộp/kết quả của mình, không xem test ẩn hoặc dữ liệu sinh viên khác. Giáo viên xem bài nộp và kết quả tổng hợp trong phạm vi quyền của mình.
 
@@ -100,7 +100,7 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 - Compiler trong môi trường chấm phải được công bố và cố định; phiên bản cụ thể chưa chọn.
 - Chưa hỗ trợ Java, nhiều file, bài tương tác, chương trình tự đọc/ghi file dữ liệu hay custom checker.
 - So đáp án theo token, bỏ qua khác biệt khoảng trắng/xuống dòng; chưa hỗ trợ sai số số thực.
-- Chạy từng test; không tự suy ra cơ chế dừng sau test sai đầu tiên. Cách xử lý này cần bảo đảm yêu cầu báo số test đúng/tổng test.
+- **[Đã thay thế 22/10/2026, mục 19: dừng ở test sai đầu tiên]** Chạy từng test; không tự suy ra cơ chế dừng sau test sai đầu tiên. Cách xử lý này cần bảo đảm yêu cầu báo số test đúng/tổng test.
 - Verdict gồm **AC, WA, TLE, MLE, CE, RE**. Lỗi hạ tầng phải tách riêng.
 - **Không có điểm số**, không có `max_score`, `score` hay bảng tổng điểm số.
 - AC khi vượt qua toàn bộ test; bài không có test không được tự động AC.
@@ -125,6 +125,8 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 ## 8. Sửa test, version và chấm lại
 
 **Chỉ giữ bộ test hiện tại. Không thêm version vào `test_cases`, không giữ bộ test cũ để chấm lịch sử.**
+
+> **Đã thay thế ngày 21/10/2026:** quy trình "`PUT` thay bộ test" bên dưới không còn áp dụng. Giáo viên sửa file `.in/.out` trực tiếp trên máy server rồi bấm "Chấm lại"; xem mục 17. Các nguyên tắc version/kết quả hiện hành còn lại của mục này vẫn giữ.
 
 Khi `PUT` thay bộ test của problem:
 
@@ -154,14 +156,13 @@ Chi tiết kiểu dữ liệu/constraint/index xem `database/schema-design.sql`.
 
 | Bảng | Cột |
 |---|---|
-| `teachers` | `id`, `fullname`, `code`, `password_hash`, `created_at`, `updated_at` |
-| `students` | `id`, `fullname`, `code`, `password_hash`, `created_at`, `updated_at` |
+| `users` | `id`, `code`, `fullname`, `role`, `password_hash`, `created_at`, `updated_at` (thay `teachers` + `students` từ 22/10/2026, mục 18) |
 | `exams` | `id`, `teacher_id`, `title`, `description`, `created_at`, `updated_at` |
 | `problems` | `id`, `exam_id`, `code`, `title`, `statement`, `time_limit_ms`, `memory_limit_mb`, `version`, `created_at`, `updated_at` |
 | `test_cases` | `id`, `problem_id`, `input`, `output` |
 | `exam_sessions` | `id`, `exam_id`, `name`, `starts_at`, `ends_at`, `created_at`, `updated_at` |
 | `exam_participants` | `id`, `exam_session_id`, `student_id`, `status`, `joined_at`, `finished_at` |
-| `refresh_tokens` | `id`, `teacher_id`, `student_id`, `token_hash`, `expires_at` |
+| `refresh_tokens` | `id`, `user_id`, `token_hash`, `expires_at` |
 | `submissions` | `id`, `exam_participant_id`, `problem_id`, `source_path`, `received_at` |
 | `judge_runs` | `id`, `submission_id`, `problem_version`, `status`, `verdict`, `passed_tests`, `total_tests`, `compiler_info`, `compile_output`, `system_error`, `created_at`, `started_at`, `finished_at` |
 | `submission_test_results` | `id`, `judge_run_id`, `test_case_id`, `verdict`, `execution_time_ms`, `memory_used_kb` |
@@ -173,7 +174,7 @@ Chi tiết kiểu dữ liệu/constraint/index xem `database/schema-design.sql`.
 - `test_cases` không có `position`; có thể dùng `id` để có thứ tự ổn định.
 - Không có `auth_sessions`; đã thay bằng `refresh_tokens`.
 - Không có bảng tổng điểm; kết quả AC được truy vấn từ lượt chấm hiện hành.
-- Một run cho mỗi `(submission_id, problem_version)`; retry hạ tầng dùng lại run đó, không tạo thêm run trùng version.
+- **[Đã thay thế 22/10/2026, mục 19]** ~~Một run cho mỗi `(submission_id, problem_version)`~~ → tối đa **một run không `obsolete`** cho mỗi `(submission_id, problem_version)` (unique index một phần `judge_runs_current_idx`); retry hạ tầng dùng lại run đó, chấm lại thủ công tạo run mới sau khi chuyển run cũ sang `obsolete`.
 - Một job cho mỗi run; nhận bài phải tạo submission + run + job cùng transaction.
 
 ## 10. Transaction, hàng đợi và phục hồi
@@ -267,3 +268,157 @@ Nếu tài liệu này được chép sang repo backend riêng, cần mang theo 
 Tại lúc bàn giao, người dùng chỉ yêu cầu tạo tài liệu này. **Chưa được tự chuyển sang bước triển khai.**
 
 Khi có yêu cầu mới: đọc tài liệu này và SQL, kiểm tra trạng thái repo thực tế, xác định đúng bước được giao. Các bước dự kiến sau thiết kế là tạo/kiểm chứng migration PostgreSQL, chốt API rồi triển khai luồng tối thiểu; phải duyệt từng bước, không tự làm đồng loạt.
+
+## 16. Quyết định bổ sung ngày 21/10/2026 (bước scaffold)
+
+Người dùng xác nhận tiếp tục theo tài liệu này (**Go + PostgreSQL, bản đầu chỉ C++17**) và duyệt các lựa chọn dưới đây. Mục này **bổ sung**, không thay đổi các quyết định ở trên.
+
+### Thư viện đã chốt
+
+| Mục | Lựa chọn |
+|---|---|
+| HTTP router | `github.com/go-chi/chi/v5` |
+| PostgreSQL driver/pool | `github.com/jackc/pgx/v5` (`pgxpool`) |
+| Truy vấn | ~~`sqlc`~~ — **đã thay thế 22/10/2026 (mục 19)**: pgx viết tay |
+| Migration | `github.com/pressly/goose/v3`, file SQL nhúng vào binary `cmd/migrate` |
+| WebSocket | `github.com/coder/websocket` |
+
+### Bố cục mã nguồn (package-by-feature)
+
+```
+cmd/api        HTTP API (REST + WebSocket), /healthz ping DB
+cmd/worker     tiến trình chấm, tách khỏi API
+cmd/migrate    chạy goose với migration nhúng
+internal/config   đọc biến môi trường
+internal/db       tạo pgxpool
+internal/httpx    router gốc, helper JSON, nâng cấp WebSocket
+internal/{auth,exam,problem,submission,judge}
+                  mỗi feature: handler.go → service.go → repository.go
+migrations/    00001_init.sql = DDL của database/schema-design.sql bọc goose
+```
+
+- Interface đặt ở ranh giới **service ↔ repository**: `service.go` khai báo `Repository`, `repository.go` cài đặt bằng pgx. Handler gọi `*Service`.
+- Đường dẫn API và việc mount router feature **chưa chốt**; scaffold chỉ có `/healthz`.
+
+### Docker Compose (phương án B)
+
+- Một Dockerfile multi-stage: một stage build Go cho cả `api`, `worker`, `migrate`; stage `api` và `worker` riêng. Stage `worker` cài `build-essential` (g++ của Debian bookworm). **Phiên bản compiler chính thức vẫn phải ghi lại/cố định trước khi chấm.**
+- Service: `postgres` (16, healthcheck, volume `pgdata`, không publish port), `api` (đợi postgres healthy, publish `0.0.0.0:8080`), `worker` (đợi postgres healthy).
+- Volume `data` dùng chung giữa `api` và `worker` cho source và file test (`DATA_DIR=/data`).
+- Mạng `db` là `internal`: worker chỉ nối được PostgreSQL, không ra LAN/Internet; `api` nối thêm mạng `web` để publish port.
+- Container worker **không phải sandbox**. Bước judge phải chạy chương trình sinh viên không có mạng, có timeout, giới hạn bộ nhớ/tiến trình/output bằng `setrlimit`, dưới user không đặc quyền.
+- Biến môi trường: `DATABASE_URL`, `JWT_SECRET`, `DATA_DIR`, `HTTP_ADDR`, `WORKER_CONCURRENCY`, `WORKER_POLL_INTERVAL`, `WORKER_ID`; mẫu ở `.env.example`.
+
+### Trạng thái
+
+- Đã tạo scaffold và stub; **chưa triển khai chức năng**.
+- **Chưa** chạy `docker compose up`, chưa build image, chưa chạy migration. Các thao tác này cần duyệt riêng.
+- Cập nhật cùng ngày: người dùng duyệt chạy thử. Image đã build, `00001_init.sql` đã chạy thành công trên PostgreSQL 16 (12 bảng, 13 index), `/healthz` trả 200 qua localhost và IP LAN.
+
+## 17. Quyết định API v1 ngày 21/10/2026
+
+Người dùng duyệt các quyết định dưới đây. Danh sách endpoint chi tiết: `docs/api-v1.md`.
+
+### Compiler
+
+- Compiler chính thức: **g++ 12.2 (Debian bookworm, `12.2.0-14+deb12u1`)** trong image worker, `-std=c++17`.
+
+### Đăng nhập và token
+
+- **[Đã thay thế 22/10/2026, xem mục 18]** Một endpoint `POST /api/v1/auth/login` với `role` (`teacher` | `student`) trong body, vì `code` chỉ duy nhất trong từng bảng.
+- Access token: JWT **HS256**, sống **15 phút**, gửi qua `Authorization: Bearer`; FE giữ trong bộ nhớ.
+- Refresh token: chuỗi ngẫu nhiên, sống **7 ngày**, trả trong **JSON body** (không dùng cookie); DB lưu SHA-256. Rotation một lần dùng như mục 4.
+- Mật khẩu băm bằng **bcrypt** (`golang.org/x/crypto/bcrypt`, cost mặc định 10). Lý do: thư viện chuẩn của hệ sinh thái Go, có sẵn salt, đủ cho ~50 tài khoản trên LAN; không cần tinh chỉnh tham số bộ nhớ như argon2id. Giới hạn bcrypt 72 byte nên mật khẩu tối đa 72 byte.
+
+### Tài khoản và phiên
+
+- Giáo viên đầu tiên tạo bằng `cmd/seed` đọc biến môi trường. Sinh viên được giáo viên tạo qua API (từng người hoặc import CSV), mật khẩu mặc định = MSV.
+- Mọi sinh viên thấy mọi phiên; chỉ tham gia được trong khung giờ phiên. Không có danh sách gán trước hay mã truy cập.
+- Sinh viên không xem đề trước `starts_at`; chỉ thấy verdict tổng + passed/total, **không** thấy kết quả từng test; không xem tổng hợp của sinh viên khác.
+
+### Test trên đĩa và chấm lại (thay quy trình PUT ở mục 8)
+
+- Test là các cặp `.in/.out` trong thư mục cố định của problem dưới `DATA_DIR`; DB lưu đường dẫn tương đối. Không có API upload test.
+- Giáo viên sửa file trực tiếp trên máy server, rồi bấm **"Chấm lại"** (`POST /api/v1/problems/{id}/rejudge`). Nút nằm ở trang phiên nhưng chấm lại **mọi bài nộp của problem ở mọi phiên**, vì `version` gắn với problem.
+- Chấm lại: quét thư mục, kiểm tra mỗi `.in` có `.out` và bộ test không rỗng, đồng bộ `test_cases`, tăng `version` một lần, obsolete run/job cũ, tạo run/job mới — cùng một transaction.
+- Đổi `time_limit_ms` hoặc `memory_limit_mb` cũng tăng `version` và chấm lại (đóng điểm mở ở mục 8).
+- Giới hạn đã biết: sửa file mà không bấm "Chấm lại" thì kết quả cũ vẫn hiển thị như hiện hành. Worker chép test sang thư mục riêng khi nhận job; lần chấm đọc lẫn file đang sửa sẽ bị obsolete khi version tăng.
+- Compose dùng **bind mount `./data:/data`** (thay named volume) để giáo viên sửa file trên máy; thư mục thuộc uid 10001, bị git-ignore.
+
+### Khác
+
+- Prefix `/api/v1`. Source nộp tối đa **64 KB**.
+- WebSocket: access token gửi trong message đầu tiên (không đặt trên URL), kiểm tra Origin, message JSON `{"type": ..., "data": ...}`.
+- v1 gồm: chấm lại thủ công một bài nộp, thống kê hàng đợi `/admin/queue`, export CSV. Export zip để sau.
+
+### Ghi chú triển khai auth (nhánh `feature/auth`)
+
+- `code` tài khoản được chuẩn hóa **trim + viết hoa** trước khi lưu và khi tra cứu (đề xuất của agent, cần người dùng xác nhận nếu MSV/mã GV có chữ thường cần giữ nguyên).
+- Login, refresh, đổi mật khẩu khóa hàng tài khoản trước rồi mới tới refresh token; login và đổi mật khẩu kiểm tra lại `password_hash` dưới khóa.
+- **[Đã thay thế 22/10/2026, mục 19]** sqlc chưa dùng: môi trường agent không tải được sqlc, nên repository auth viết tay bằng pgx.
+- Thư mục `./data` bind mount; container chạy với `APP_UID:APP_GID` (mặc định 10001) phải trùng chủ sở hữu `./data`.
+
+### Ghi chú triển khai sinh viên, đề, phiên, problem (nhánh `feature/students`, `feature/exams`)
+
+Các lựa chọn dưới đây do agent đề xuất khi triển khai, **cần người dùng xác nhận**:
+
+- Import CSV: dòng lỗi (thiếu/quá dài, trùng trong file) từ chối cả file; `code` đã có trong DB thì bỏ qua và báo lại. Cột `class` bị bỏ qua vì bảng tài khoản không có cột lớp.
+- Giáo viên chỉ thấy đề của mình (404 với đề của giáo viên khác).
+- Xóa đề chỉ khi đề không còn problem và phiên; xóa phiên/problem bị chặn nếu đã có bài nộp. Xóa problem không xóa file test trên đĩa.
+- Sinh viên phải **tham gia phiên** mới xem được nội dung đề; danh sách problem (mã, tên) hiện từ `starts_at`. Đề vẫn xem được sau khi phiên kết thúc.
+- Mã problem trim + viết hoa; `time_limit_ms` 1–10000, `memory_limit_mb` 1–1024.
+- Phần tạo lượt chấm lại khi tăng version (`requeueProblem`) là stub cho tới bước submission + judge.
+
+## 18. Gộp tài khoản vào bảng `users` (22/10/2026)
+
+Người dùng quyết định ("gộp đi") gộp `teachers` và `students` thành **một bảng `users`**. Thay các quyết định ở mục 4 (hai bảng, `code` duy nhất trong từng bảng) và mục 17 (login có `role` trong body).
+
+- `users(id, code UNIQUE, fullname, role CHECK IN ('teacher','student'), password_hash, created_at, updated_at)`; giữ nguyên ràng buộc cũ của `code`/`fullname`. Tên cột họ tên vẫn là `fullname` như các API hiện có.
+- `code` **duy nhất trên toàn bộ tài khoản**: tạo sinh viên trùng mã giáo viên → 409; import CSV bỏ qua dòng đó với lý do `code belongs to a teacher account`.
+- Login: `POST /api/v1/auth/login {code, password}`. Vai trò đọc từ `users.role` và ghi vào claim `role` của JWT.
+- FK đổi đích: `exams.teacher_id → users`, `exam_participants.student_id → users`; `refresh_tokens` chỉ còn `user_id NOT NULL` (bỏ `teacher_id`/`student_id` và CHECK chọn một). Index mới: `users_role_code_idx (role, code)`, `refresh_tokens_user_idx (user_id)` (thay hai index refresh token cũ) — vẫn 13 index bổ sung.
+- **Ràng buộc vai trò nằm ở tầng service, không có trigger/CHECK chéo bảng**: `exams.teacher_id` luôn lấy từ JWT đã qua `RequireRole(teacher)`, `exam_participants.student_id` từ JWT đã qua `RequireRole(student)`; truy vấn quản lý sinh viên luôn lọc `role = 'student'`. Không có API đổi `role`.
+- `migrations/00001_init.sql` và `database/schema-design.sql` được sửa trực tiếp (chưa có dữ liệu thật); DB dev được xóa volume `pgdata` và tạo lại.
+
+## 19. Quyết định ngày 22/10/2026 (câu hỏi trong `docs/IMPLEMENTATION_PLAN.md`)
+
+Người dùng trả lời các đề xuất của agent:
+
+- **Verdict (cập nhật cùng ngày):** chạy test theo thứ tự (`test_cases.id`) và **dừng ở test không AC đầu tiên**; `passed_tests` = số test đúng trước test đó, `total_tests` = tổng số test, verdict tổng = verdict của test đó (ví dụ test 11/15 TLE → `10/15 TLE`). Test sau đó **không chạy và không có dòng** trong `submission_test_results`. CE xét trước khi chạy test. AC khi mọi test AC. Thay câu "không tự suy ra cơ chế dừng sau test sai đầu tiên" ở mục 6.
+- **Biên dịch:** `g++ -std=c++17 -O2 -pipe -static -DONLINE_JUDGE`, timeout biên dịch 10 giây, compile output trả SV được cắt gọn.
+- **Sandbox (chốt cùng ngày): `setrlimit`, không dùng isolate.** Triển khai (`internal/sandbox`, `internal/cppjudge`):
+  - Worker là root trong container, `cap_drop: ALL` + `cap_add: SYS_ADMIN, SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL`, `no-new-privileges`. Biên dịch và chạy bài đều dưới uid riêng 20000+slot, network namespace rỗng, không capability, `no_new_privs`.
+  - Giới hạn chạy: CPU = time limit, wall = 2 × time limit + 1 s, AS = memory + 64 MB, STACK = memory, stdout ≤ 64 MB, NPROC 1, NOFILE 16. Biên dịch: 10 s, 1.5 GB, NPROC 64; output biên dịch trả SV cắt 8 KB.
+  - MLE = RSS đỉnh > giới hạn, hoặc chết với `std::bad_alloc`; chương trình bỏ qua `malloc` thất bại rồi crash bị tính RE (giới hạn của `setrlimit` khi không có cgroup). Ghi > 64 MB stdout → RE.
+  - Worker `chmod 0750` thư mục `DATA_DIR` khi khởi động để runner uid không đọc được test/bài nộp khác.
+- **File nộp:** chỉ đuôi `.cpp`, ≤ 64 KB, không rỗng; không bắt buộc UTF-8.
+- **Hàng đợi:** tối đa 3 lần thử cho lỗi hạ tầng, backoff 5 s / 30 s / 2 phút; lease 60 s, worker gia hạn định kỳ khi đang chấm; `WORKER_CONCURRENCY` mặc định 2.
+- **Chấm lại thủ công một bài:** run cũ → `obsolete`, tạo run + job mới cùng version. Thay `UNIQUE (submission_id, problem_version)` bằng unique index một phần `WHERE status <> 'obsolete'` (sửa migration `00001` khi làm phase 10). Thay câu "một run cho mỗi `(submission_id, problem_version)`" ở mục 9 thành "một run **không obsolete**".
+- **WebSocket:** PostgreSQL `LISTEN/NOTIFY`, polling dự phòng.
+- **Không làm** rate limit, **không làm** thêm chống gian lận, **không thêm** cột lớp học (LAN, một lớp làm bài cùng lúc).
+- **Giữ nguyên** các lựa chọn agent ở mục 17–18.
+- **Bàn giao:** theo `Submission.md` (thư mục `NhomXX_TenProject/{Source,Report}`, USB qua lớp trưởng), giữ thêm bản Google Drive.
+- **Bỏ sqlc:** xóa `sqlc.yaml`, `queries/`, target `make sqlc`; repository viết tay bằng pgx.
+- **Hàng đợi (triển khai phase 8):** snapshot test/giới hạn/version đọc trong transaction claim; không giữ khóa khi chép file vì test được sửa trực tiếp trên đĩa — tính đúng dựa vào kiểm tra version + lease khi ghi kết quả (thay ý "giữ khóa SHARE problem trong lúc copy" ở chú thích SQL mục 4). Thời gian hàng đợi dùng `clock_timestamp()` của DB. Biến môi trường mới `WORKER_LEASE` (mặc định 60s, tối thiểu 3s).
+- **Chấm lại (triển khai phase 10):** đổi limit hoặc bấm "Chấm lại" problem → trong transaction khóa problem, mọi run/job không `obsolete` của problem (kể cả run `completed` version cũ) chuyển `obsolete`, tạo run + job mới version mới cho mọi bài nộp ở mọi phiên. Chấm lại thủ công một bài (`POST /submissions/{id}/rejudge`) làm tương tự cho riêng bài đó, cùng version. Migration `00001` đã đổi `UNIQUE (submission_id, problem_version)` thành `judge_runs_current_idx`; DB dev được `ALTER` tại chỗ (không xóa dữ liệu) cho khớp.
+
+## Cập nhật: định dạng danh sách tương thích Mesgo
+
+Người dùng yêu cầu đổi các API danh sách sang `PagedList<T>` của Mesgo: `data`, `page`, `pageSize`, `totalPages` (camelCase). Request dùng `page` từ 1, `pageSize` mặc định 20/tối đa 200; sinh viên dùng `query` thay `q`. Dữ liệu rỗng trả `data: []`, `totalPages: 0`; trang vượt cuối trả array rỗng. Các metadata riêng giữ cùng cấp với PagedList. Không bọc lại response chi tiết hoặc các array trong kết quả import/rejudge. Chi tiết endpoint xem `docs/api-v1.md` và Swagger. Không cần thay schema/migration.
+
+## Cập nhật: chi tiết đề có danh sách problem
+
+Người dùng đã duyệt bổ sung `problems: [{id, code, title}]` vào `GET /api/v1/exams/{id}`. Danh sách đầy đủ sắp theo `code` rồi `id`; rỗng trả `[]`, không bọc PagedList vì nằm trong response chi tiết. Giữ kiểm tra quyền giáo viên sở hữu đề. Response danh sách/tạo/sửa đề không thay đổi theo cập nhật này.
+
+## Cập nhật: phạm vi WebSocket (phase 11) — Đã chốt 22/10/2026
+
+Người dùng chọn: **tối thiểu** (`/api/v1/ws`, Origin, auth ở message đầu, ping/pong, `subscribe` theo phiên, `run.updated` qua `NOTIFY/LISTEN`, nối lại + REST bù) **+ bảng GV trực tiếp** (`summary.updated`: `x/N AC` theo SV × problem, SV online, độ dài hàng đợi; kèm REST tổng hợp của phase 12) **+ thông báo của GV tới phiên** **+ chấm lại hiện ngay cho SV bị ảnh hưởng**. Không làm tiến độ từng test và hẹn giờ phiên.
+- **Triển khai phase 11:** `internal/events` (`pg_notify` trong transaction ở nhận bài, worker nhận, có kết quả, retry/lỗi hạ tầng, chấm lại), `internal/realtime` (hub, `/api/v1/ws`, listener `LISTEN` tự nối lại + `resync`), `internal/board` (bảng `x/N AC` + thông báo). Thông báo lưu **trong bộ nhớ API** (tối đa 50/phiên, mất khi API khởi động lại) vì không có bảng — muốn lưu bền cần thêm migration (chưa duyệt). Gửi thông báo qua REST `POST /sessions/{id}/announcements` rồi đẩy WS (kiểm tra quyền/validation như mọi API). Biến môi trường mới `WS_ALLOWED_ORIGINS`. Giao thức chi tiết: `docs/api-v1.md` mục "Chi tiết WebSocket".
+- **Thông báo — Đã chốt 23/10/2026:** người dùng xác nhận **không cần lưu bền** ("không cần đâu"): giữ trong bộ nhớ API, không thêm migration. Giới hạn chấp nhận: tối đa 50 thông báo/phiên, mất khi API khởi động lại.
+
+## Cập nhật phase 14 (23/10/2026)
+
+- Worker `LISTEN judge_events` để nhận job ngay (polling 1 s giữ làm dự phòng); `WORKER_LISTEN=false` tắt để thực nghiệm. Đo: e2e p50 giảm ~32 % so với chỉ polling.
+- API dọn file source mồ côi mỗi 30 phút (cũ hơn 1 giờ, không submission nào trỏ tới) — thực hiện "file mồ côi được dọn sau" ở mục 7. Worker xóa thư mục chấm tạm còn sót khi khởi động.
+- Sao lưu/khôi phục: `scripts/backup.sh`, `scripts/restore.sh` (DB dump trước rồi mới tar `./data`).
+- Số liệu thực nghiệm: `docs/results/RESULTS.md` (đo trên i5-12400F, client cùng máy; chưa đo trên laptop i3 và LAN thật).

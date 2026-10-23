@@ -1,0 +1,7 @@
+.git
+.claude
+.env
+bin/
+data/
+*.md
+!README.md

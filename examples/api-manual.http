@@ -1,0 +1,200 @@
+# Request mau cho REST Client; cung co the copy method/URL/body sang Postman.
+# Khong tu dong gui. Du lieu mau; thay tai khoan/token/ID bang gia tri thuc te.
+# Chay theo thu tu; cac thao tac doi mat khau/logout/delete de cuoi.
+@host = http://localhost:8080
+@base = {{host}}/api/v1
+@teacherCode = REPLACE_TEACHER_CODE
+@teacherPassword = REPLACE_TEACHER_PASSWORD
+@teacherToken = REPLACE_TEACHER_ACCESS_TOKEN
+@studentToken = REPLACE_STUDENT_ACCESS_TOKEN
+@refreshToken = REPLACE_CURRENT_REFRESH_TOKEN
+@studentId = 1
+@examId = 1
+@problemId = 1
+@sessionId = 1
+
+### 1. Health: 200 neu DB ket noi duoc
+GET {{host}}/healthz
+
+### 2. Login giao vien: 200. Copy access_token vao teacherToken
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"code":"{{teacherCode}}","password":"{{teacherPassword}}"}
+
+### 3. Tai khoan hien tai: 200
+GET {{base}}/me
+Authorization: Bearer {{teacherToken}}
+
+### 4. Tao SV rieng le: 201; 409 neu code da ton tai. Luu id tra ve
+POST {{base}}/students
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"code":"TESTSV006","fullname":"Đỗ Minh Khôi"}
+
+### 5. Import 5 SV: 200. Trong Postman dung form-data, key file, type File
+POST {{base}}/students/import
+Authorization: Bearer {{teacherToken}}
+Content-Type: multipart/form-data; boundary=StudentImportBoundary
+
+--StudentImportBoundary
+Content-Disposition: form-data; name="file"; filename="students-import.csv"
+Content-Type: text/csv; charset=utf-8
+
+< ./students-import.csv
+--StudentImportBoundary--
+
+### 6. Danh sach SV: 200
+GET {{base}}/students?query=TESTSV&page=1&pageSize=20
+Authorization: Bearer {{teacherToken}}
+
+### 7. Tao de: 201. Copy id tu response vao examId
+POST {{base}}/exams
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"title":"Đề test API","description":"Dữ liệu thử cho luồng giáo viên và sinh viên"}
+
+### 8. Danh sach de
+GET {{base}}/exams
+Authorization: Bearer {{teacherToken}}
+
+### 9. Chi tiet de
+GET {{base}}/exams/{{examId}}
+Authorization: Bearer {{teacherToken}}
+
+### 10. Tao problem: 201. Luu id vao problemId
+POST {{base}}/exams/{{examId}}/problems
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"code":"A","title":"Tổng hai số","statement":"Nhập hai số nguyên a, b. In tổng a + b. Ví dụ input: 2 3; output: 5.","time_limit_ms":1000,"memory_limit_mb":256}
+
+### 11. Danh sach problem
+GET {{base}}/exams/{{examId}}/problems
+Authorization: Bearer {{teacherToken}}
+
+### 12. Chi tiet problem (giao vien)
+GET {{base}}/problems/{{problemId}}
+Authorization: Bearer {{teacherToken}}
+
+### 13. Tao phien: 201. DOI GIO cho starts_at <= gio server hien tai < ends_at.
+# Vi du duoi day mo ca ngay 22/10/2026, UTC+7; khong phai thoi luong mac dinh.
+# Copy id tu response vao sessionId.
+POST {{base}}/exams/{{examId}}/sessions
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"name":"Phiên test API","starts_at":"2026-10-22T00:00:00+07:00","ends_at":"2026-10-23T00:00:00+07:00"}
+
+### 14. Danh sach phien cua de
+GET {{base}}/exams/{{examId}}/sessions
+Authorization: Bearer {{teacherToken}}
+
+### 15. Xem phien (giao vien)
+GET {{base}}/sessions/{{sessionId}}
+Authorization: Bearer {{teacherToken}}
+
+### 16. Login SV da import: 200. Copy access_token vao studentToken
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"code":"TESTSV001","password":"TESTSV001"}
+
+### 17. Cac phien SV nhin thay
+GET {{base}}/me/sessions
+Authorization: Bearer {{studentToken}}
+
+### 18. Tham gia: 200 in_progress; 409 neu chua bat dau/da het gio
+POST {{base}}/sessions/{{sessionId}}/join
+Authorization: Bearer {{studentToken}}
+
+### 19. Xem phien (SV)
+GET {{base}}/sessions/{{sessionId}}
+Authorization: Bearer {{studentToken}}
+
+### 20. Xem de (SV): 200 sau khi tham gia va toi gio bat dau
+GET {{base}}/sessions/{{sessionId}}/problems/{{problemId}}
+Authorization: Bearer {{studentToken}}
+
+### 21. Danh sach nguoi tham gia (GV)
+GET {{base}}/sessions/{{sessionId}}/participants
+Authorization: Bearer {{teacherToken}}
+
+### 22. Dong bo test: can tao N.in/N.out trong data/problems/<problemId>/tests truoc.
+# Hien chi scan test/tang version; requeueProblem la stub, KHONG cham that.
+# Chua co file test: 409. Co cap hop le: 200.
+POST {{base}}/problems/{{problemId}}/rejudge
+Authorization: Bearer {{teacherToken}}
+
+### 23. Test da luu DB
+GET {{base}}/problems/{{problemId}}/tests
+Authorization: Bearer {{teacherToken}}
+
+### 24. Sua de: 200
+PUT {{base}}/exams/{{examId}}
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"title":"Đề test API đã sửa","description":"Kiểm tra cập nhật đề"}
+
+### 25. Sua problem: 200. Giu limit nhu cu de khong tang version
+PUT {{base}}/problems/{{problemId}}
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"code":"A","title":"Tổng hai số nguyên","statement":"Nhập a và b, in a + b.","time_limit_ms":1000,"memory_limit_mb":256}
+
+### 26. Sua phien: 200. Dieu chinh ngay gio khi test
+PUT {{base}}/sessions/{{sessionId}}
+Authorization: Bearer {{teacherToken}}
+Content-Type: application/json
+
+{"name":"Phiên test đã sửa","starts_at":"2026-10-22T00:00:00+07:00","ends_at":"2026-10-23T00:00:00+07:00"}
+
+### 27. Ket thuc: 200 finished. Goi lai khong mo lai phien
+POST {{base}}/sessions/{{sessionId}}/finish
+Authorization: Bearer {{studentToken}}
+
+### 28. Refresh: 200; token cu bi thay. Cap nhat ca access va refresh tu response
+POST {{base}}/auth/refresh
+Content-Type: application/json
+
+{"refresh_token":"{{refreshToken}}"}
+
+### 29. Doi mat khau SV: 204. Thu sau cac buoc login mac dinh
+PUT {{base}}/me/password
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{"current_password":"TESTSV001","new_password":"TestPass2026!"}
+
+### 30. Reset mat khau: 204. studentId PHAI la id cua SV muon reset
+POST {{base}}/students/{{studentId}}/reset-password
+Authorization: Bearer {{teacherToken}}
+
+### 31. Logout: 204. Dung refresh token hien hanh (dang xuat khong thu hoi JWT ngay)
+POST {{base}}/auth/logout
+Content-Type: application/json
+
+{"refresh_token":"{{refreshToken}}"}
+
+### 32. Test phan quyen: SV goi route GV -> 403
+GET {{base}}/students
+Authorization: Bearer {{studentToken}}
+
+### 33. Test thieu token -> 401
+GET {{base}}/me
+
+### 34. Xoa du lieu TEST: phien truoc (204 neu chua co submissions)
+DELETE {{base}}/sessions/{{sessionId}}
+Authorization: Bearer {{teacherToken}}
+
+### 35. Xoa problem TEST: 204 neu chua co submissions; file test van con tren host
+DELETE {{base}}/problems/{{problemId}}
+Authorization: Bearer {{teacherToken}}
+
+### 36. Xoa de TEST: 204 khi da xoa het problem va phien
+DELETE {{base}}/exams/{{examId}}
+Authorization: Bearer {{teacherToken}}
