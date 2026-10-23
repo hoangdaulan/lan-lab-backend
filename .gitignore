@@ -4,3 +4,4 @@ data/
 .smoke.env
 backups/
 data.before-restore-*/
+.trial.env

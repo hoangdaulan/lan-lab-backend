@@ -23,6 +23,7 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/realtime"
 	"github.com/hoangdaulan/lan-lab-backend/internal/student"
 	"github.com/hoangdaulan/lan-lab-backend/internal/submission"
+	"github.com/hoangdaulan/lan-lab-backend/web"
 )
 
 func main() {
@@ -103,6 +104,8 @@ func run(log *slog.Logger) error {
 			})
 		})
 	})
+
+	web.Mount(router)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
