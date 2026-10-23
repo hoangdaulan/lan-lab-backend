@@ -17,11 +17,26 @@ type Worker struct {
 	pollInterval    time.Duration
 	recoverInterval time.Duration
 	log             *slog.Logger
+	// wake lets idle loops claim at once when a job may be available
+	// (NOTIFY from a submission or rejudge) instead of waiting for the next
+	// poll; polling stays as the fallback.
+	wake chan struct{}
 }
 
 func NewWorker(svc *Service, id string, concurrency int, pollInterval time.Duration, log *slog.Logger) *Worker {
 	return &Worker{svc: svc, id: id, concurrency: concurrency, pollInterval: pollInterval,
-		recoverInterval: 30 * time.Second, log: log.With("worker_id", id)}
+		recoverInterval: 30 * time.Second, log: log.With("worker_id", id), wake: make(chan struct{}, concurrency)}
+}
+
+// Wake signals idle judging loops (non-blocking; extra signals are dropped).
+func (w *Worker) Wake() {
+	for i := 0; i < cap(w.wake); i++ {
+		select {
+		case w.wake <- struct{}{}:
+		default:
+			return
+		}
+	}
 }
 
 // Run blocks until ctx is cancelled and every in-flight job has finished
@@ -78,6 +93,7 @@ func (w *Worker) judgeLoop(ctx context.Context, slot int) {
 		if !worked {
 			select {
 			case <-ctx.Done():
+			case <-w.wake:
 			case <-time.After(w.pollInterval):
 			}
 		}

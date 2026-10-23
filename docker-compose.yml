@@ -60,6 +60,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       DATA_DIR: /data
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      WORKER_LISTEN: ${WORKER_LISTEN:-true}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
     # Root inside the container with only the capabilities the sandbox needs
     # (BACKEND_CONTEXT.md §19): SYS_ADMIN for a new network namespace per
     # program, SETUID/SETGID to run it as runner uid 20000+slot, CHOWN/FOWNER

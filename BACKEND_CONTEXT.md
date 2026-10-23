@@ -415,3 +415,10 @@ Người dùng đã duyệt bổ sung `problems: [{id, code, title}]` vào `GET 
 Người dùng chọn: **tối thiểu** (`/api/v1/ws`, Origin, auth ở message đầu, ping/pong, `subscribe` theo phiên, `run.updated` qua `NOTIFY/LISTEN`, nối lại + REST bù) **+ bảng GV trực tiếp** (`summary.updated`: `x/N AC` theo SV × problem, SV online, độ dài hàng đợi; kèm REST tổng hợp của phase 12) **+ thông báo của GV tới phiên** **+ chấm lại hiện ngay cho SV bị ảnh hưởng**. Không làm tiến độ từng test và hẹn giờ phiên.
 - **Triển khai phase 11:** `internal/events` (`pg_notify` trong transaction ở nhận bài, worker nhận, có kết quả, retry/lỗi hạ tầng, chấm lại), `internal/realtime` (hub, `/api/v1/ws`, listener `LISTEN` tự nối lại + `resync`), `internal/board` (bảng `x/N AC` + thông báo). Thông báo lưu **trong bộ nhớ API** (tối đa 50/phiên, mất khi API khởi động lại) vì không có bảng — muốn lưu bền cần thêm migration (chưa duyệt). Gửi thông báo qua REST `POST /sessions/{id}/announcements` rồi đẩy WS (kiểm tra quyền/validation như mọi API). Biến môi trường mới `WS_ALLOWED_ORIGINS`. Giao thức chi tiết: `docs/api-v1.md` mục "Chi tiết WebSocket".
 - **Thông báo — Đã chốt 23/10/2026:** người dùng xác nhận **không cần lưu bền** ("không cần đâu"): giữ trong bộ nhớ API, không thêm migration. Giới hạn chấp nhận: tối đa 50 thông báo/phiên, mất khi API khởi động lại.
+
+## Cập nhật phase 14 (23/10/2026)
+
+- Worker `LISTEN judge_events` để nhận job ngay (polling 1 s giữ làm dự phòng); `WORKER_LISTEN=false` tắt để thực nghiệm. Đo: e2e p50 giảm ~32 % so với chỉ polling.
+- API dọn file source mồ côi mỗi 30 phút (cũ hơn 1 giờ, không submission nào trỏ tới) — thực hiện "file mồ côi được dọn sau" ở mục 7. Worker xóa thư mục chấm tạm còn sót khi khởi động.
+- Sao lưu/khôi phục: `scripts/backup.sh`, `scripts/restore.sh` (DB dump trước rồi mới tar `./data`).
+- Số liệu thực nghiệm: `docs/results/RESULTS.md` (đo trên i5-12400F, client cùng máy; chưa đo trên laptop i3 và LAN thật).

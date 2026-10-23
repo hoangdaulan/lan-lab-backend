@@ -20,6 +20,9 @@ type Storage interface {
 	Save(content []byte, now time.Time) (string, error)
 	Read(relPath string) ([]byte, error)
 	Remove(relPath string) error
+	// ListOlderThan returns relative paths of source files last modified
+	// before t (orphan cleanup).
+	ListOlderThan(t time.Time) ([]string, error)
 }
 
 const sourceRoot = "submissions"
@@ -95,4 +98,36 @@ func (s *fsStorage) Remove(relPath string) error {
 		return err
 	}
 	return os.Remove(full)
+}
+
+func (s *fsStorage) ListOlderThan(t time.Time) ([]string, error) {
+	root := filepath.Join(s.dataDir, sourceRoot)
+	var out []string
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && p == root {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		if !d.Type().IsRegular() || !strings.HasSuffix(d.Name(), ".cpp") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(t) {
+			rel, err := filepath.Rel(s.dataDir, p)
+			if err != nil {
+				return err
+			}
+			out = append(out, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return out, err
 }

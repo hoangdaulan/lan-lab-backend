@@ -60,6 +60,10 @@ func run(log *slog.Logger) error {
 	}
 	svc := judge.NewService(judge.NewRepository(pool), judger, judge.DefaultRetry, cfg.WorkerLease)
 	w := judge.NewWorker(svc, cfg.WorkerID, cfg.WorkerConcurrency, cfg.WorkerPollInterval, log)
+	if cfg.WorkerListen && svc.Enabled() {
+		go w.ListenForWork(ctx, cfg.DatabaseURL, log)
+	}
+	log.Info("job pickup", "listen", cfg.WorkerListen, "poll_interval", cfg.WorkerPollInterval)
 	return w.Run(ctx)
 }
 

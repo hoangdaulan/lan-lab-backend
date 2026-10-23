@@ -74,6 +74,12 @@ func New(cfg Config) (*Judger, error) {
 	if err := os.MkdirAll(cfg.WorkDir, 0o711); err != nil {
 		return nil, err
 	}
+	// Scratch directories left by a crashed worker are never reused.
+	if stale, err := os.ReadDir(cfg.WorkDir); err == nil {
+		for _, e := range stale {
+			_ = os.RemoveAll(filepath.Join(cfg.WorkDir, e.Name()))
+		}
+	}
 	j := &Judger{cfg: cfg, compilerInfo: strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]),
 		uids: make(chan int, cfg.Slots), run: sandbox.Run, reap: sandbox.Reap}
 	for i := 0; i < cfg.Slots; i++ {
