@@ -259,3 +259,19 @@ func (r *pgRepository) Rejudge(ctx context.Context, id int64) (Submission, error
 	}
 	return r.Get(ctx, id)
 }
+
+func (r *pgRepository) KnownSourcePaths(ctx context.Context, paths []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `SELECT source_path FROM submissions WHERE source_path = ANY($1)`, paths)
+	if err != nil {
+		return nil, err
+	}
+	found, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(found))
+	for _, p := range found {
+		out[p] = true
+	}
+	return out, nil
+}

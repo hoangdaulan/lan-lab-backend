@@ -50,6 +50,10 @@ type Config struct {
 	// is always allowed.
 	WSAllowedOrigins []string
 
+	// WorkerListen makes idle workers wake on NOTIFY instead of only
+	// polling (WORKER_LISTEN=false disables it, for experiments).
+	WorkerListen bool
+
 	// JudgeWorkDir holds per-job scratch directories (compiled binaries,
 	// program output); it must not be under DATA_DIR.
 	JudgeWorkDir string
@@ -67,6 +71,7 @@ func Load() (Config, error) {
 
 		JudgeWorkDir: getenv("JUDGE_WORK_DIR", "/var/judge"),
 	}
+	cfg.WorkerListen = os.Getenv("WORKER_LISTEN") != "false"
 	for _, o := range strings.Split(os.Getenv("WS_ALLOWED_ORIGINS"), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)

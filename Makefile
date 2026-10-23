@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed build test test-integration test-sandbox data
+.PHONY: up down migrate seed build test test-integration test-sandbox smoke experiment backup data
 
 # ./data is bind-mounted into api and worker; create it before compose does
 # (compose would create it as root).
@@ -45,3 +45,16 @@ test-sandbox:
 	CGO_ENABLED=0 go test -c -tags=sandbox -o bin/cppjudge-sandbox.test ./internal/cppjudge/
 	docker compose run --rm --no-deps -v "$(CURDIR)/bin:/test:ro" \
 		--entrypoint /test/cppjudge-sandbox.test worker -test.v -test.count=1
+
+# HTTP/WebSocket smoke test against the running stack (.smoke.env).
+smoke:
+	scripts/smoke.sh all
+
+# Load experiments E1-E4 (50 students) and the results table.
+experiment:
+	scripts/experiment.sh all
+	python3 scripts/results.py
+
+# DB dump + ./data archive into backups/<timestamp>/ (restore: scripts/restore.sh).
+backup:
+	scripts/backup.sh

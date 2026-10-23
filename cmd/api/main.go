@@ -60,8 +60,9 @@ func run(log *slog.Logger) error {
 	examHandler := exam.NewHandler(exam.NewService(exam.NewRepository(pool), nil), log)
 	problemHandler := problem.NewHandler(problem.NewService(problem.NewRepository(pool), cfg.DataDir, nil, log), log)
 	submissionRepo := submission.NewRepository(pool)
-	submissionHandler := submission.NewHandler(submission.NewService(submissionRepo,
-		submission.NewStorage(cfg.DataDir), nil, log), log)
+	submissionSvc := submission.NewService(submissionRepo, submission.NewStorage(cfg.DataDir), nil, log)
+	submissionHandler := submission.NewHandler(submissionSvc, log)
+	go submissionSvc.RunOrphanCleanup(ctx, 30*time.Minute)
 
 	// Realtime: LISTEN judge_events -> hub -> WebSocket clients
 	// (BACKEND_CONTEXT.md §19, phase 11).

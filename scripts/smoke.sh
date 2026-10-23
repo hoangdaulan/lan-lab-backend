@@ -410,7 +410,8 @@ section_submissions() {
 	req GET "/sessions/$RUNNING_ID/submissions?problem_id=$pid" "" "$tt"
 	expect "teacher lists session" 200 'len(d["data"]) == 2'
 	req GET "/submissions/$sid/tests" "" "$tt"
-	expect "teacher per-test results (none yet)" 200 'd["data"] == []'
+	# Judging may already have finished (workers wake on NOTIFY): accept either.
+	expect "teacher per-test results" 200 "d['submission']['id'] == $sid and all(t['verdict'] in ('AC','WA','TLE','MLE','RE') for t in d['data'])"
 	req GET "/submissions/$sid/tests" "" "$st"
 	expect "student cannot read per-test results" 403
 

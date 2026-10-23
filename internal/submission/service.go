@@ -31,6 +31,8 @@ type Repository interface {
 	// marks every non-obsolete run and its job obsolete, and creates a queued
 	// run + job at the current problem version (BACKEND_CONTEXT.md §19).
 	Rejudge(ctx context.Context, id int64) (Submission, error)
+	// KnownSourcePaths returns which of paths are referenced by submissions.
+	KnownSourcePaths(ctx context.Context, paths []string) (map[string]bool, error)
 }
 
 type Service struct {
@@ -183,4 +185,56 @@ func (s *Service) Rejudge(ctx context.Context, teacherID, id int64) (Submission,
 		return Submission{}, err
 	}
 	return s.repo.Rejudge(ctx, id)
+}
+
+// OrphanGrace is how old an unreferenced source file must be before it is
+// deleted, so a file whose transaction is still running is never touched
+// (BACKEND_CONTEXT.md §7).
+const OrphanGrace = time.Hour
+
+// CleanOrphans deletes source files older than OrphanGrace that no
+// submission references (left when the DB write failed after the file was
+// saved). It returns how many were removed.
+func (s *Service) CleanOrphans(ctx context.Context) (int, error) {
+	paths, err := s.storage.ListOlderThan(s.now().Add(-OrphanGrace))
+	if err != nil || len(paths) == 0 {
+		return 0, err
+	}
+	removed := 0
+	for start := 0; start < len(paths); start += 500 {
+		batch := paths[start:min(start+500, len(paths))]
+		known, err := s.repo.KnownSourcePaths(ctx, batch)
+		if err != nil {
+			return removed, err
+		}
+		for _, p := range batch {
+			if known[p] {
+				continue
+			}
+			if err := s.storage.Remove(p); err != nil {
+				s.log.Warn("remove orphan source", "path", p, "err", err)
+				continue
+			}
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+// RunOrphanCleanup calls CleanOrphans every interval until ctx ends.
+func (s *Service) RunOrphanCleanup(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if n, err := s.CleanOrphans(ctx); err != nil && ctx.Err() == nil {
+			s.log.Error("orphan cleanup", "err", err)
+		} else if n > 0 {
+			s.log.Info("removed orphan source files", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

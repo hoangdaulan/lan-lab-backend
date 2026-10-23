@@ -46,6 +46,16 @@ func (f *fakeStorage) Read(p string) ([]byte, error) {
 	return c, nil
 }
 
+func (f *fakeStorage) ListOlderThan(time.Time) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for p := range f.files {
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 func (f *fakeStorage) Remove(p string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -91,6 +101,18 @@ func (f *fakeRepo) List(_ context.Context, _ int64, flt Filter) ([]Submission, e
 
 func (f *fakeRepo) ListTestResults(context.Context, int64) ([]TestResult, error) {
 	return []TestResult{{TestCaseID: 1, Verdict: "AC"}}, nil
+}
+
+func (f *fakeRepo) KnownSourcePaths(_ context.Context, paths []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, s := range f.subs {
+		for _, p := range paths {
+			if s.SourcePath == p {
+				out[p] = true
+			}
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) Rejudge(_ context.Context, id int64) (Submission, error) {
@@ -281,5 +303,42 @@ func TestRejudgeOnlyByOwningTeacher(t *testing.T) {
 	}
 	if _, err := svc.Rejudge(ctx, 100, 1); err != nil || len(repo.rejudged) != 1 {
 		t.Fatalf("owner rejudge: %v, calls %v", err, repo.rejudged)
+	}
+}
+
+func TestCleanOrphansKeepsReferencedFiles(t *testing.T) {
+	svc, repo, st := newTestService()
+	if _, err := svc.Submit(context.Background(), 7, 3, 9, "a.cpp", []byte("x"), t0); err != nil {
+		t.Fatal(err)
+	}
+	repo.createErr = errors.New("connection reset") // leaves an orphan
+	_, _ = svc.Submit(context.Background(), 7, 3, 9, "a.cpp", []byte("y"), t0)
+	if len(st.files) != 2 {
+		t.Fatalf("files = %d", len(st.files))
+	}
+	n, err := svc.CleanOrphans(context.Background())
+	if err != nil || n != 1 || len(st.files) != 1 {
+		t.Fatalf("removed %d (%v), left %d", n, err, len(st.files))
+	}
+	if _, err := st.Read(repo.subs[1].SourcePath); err != nil {
+		t.Error("referenced file was removed")
+	}
+}
+
+func TestFSListOlderThan(t *testing.T) {
+	dir := t.TempDir()
+	st := NewStorage(dir)
+	if paths, err := st.ListOlderThan(time.Now()); err != nil || len(paths) != 0 {
+		t.Fatalf("empty dir: %v %v", paths, err)
+	}
+	old, _ := st.Save([]byte("old"), t0)
+	fresh, _ := st.Save([]byte("new"), t0)
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(filepath.Join(dir, old), past, past); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := st.ListOlderThan(time.Now().Add(-time.Hour))
+	if err != nil || len(paths) != 1 || paths[0] != old {
+		t.Fatalf("older = %v (%v), want only %s not %s", paths, err, old, fresh)
 	}
 }

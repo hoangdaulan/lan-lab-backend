@@ -31,7 +31,7 @@ Nguồn quyết định: `BACKEND_CONTEXT.md` (mục 1–18; ưu tiên mục m�
 | 11 | WebSocket: kết quả chấm, bảng GV, thông báo | ✅ xong |
 | 12 | Tổng hợp AC, export CSV, thống kê hàng đợi | ✅ xong |
 | 13 | Chống gian lận | ❌ không làm (Đã chốt 22/10/2026) |
-| 14 | Gia cố, kiểm thử tải ~50 SV, quan sát | chưa làm |
+| 14 | Gia cố, kiểm thử tải ~50 SV, quan sát | ✅ xong |
 | 15 | Tài liệu, báo cáo, kịch bản demo | chưa làm |
 
 ---
@@ -452,19 +452,31 @@ Thông tin đăng nhập cho smoke test nằm trong `.smoke.env` (git-ignore, t�
 
 ## Phase 14 — Gia cố, kiểm thử tải, quan sát
 
-**Mục tiêu:** chạy ổn với ~50 SV trên laptop i3/12 GB; có số liệu thật cho báo cáo.
+**Mục tiêu:** chạy ổn với ~50 SV; có số liệu thật cho báo cáo.
 
 **Công việc**
-- Log có cấu trúc (request id, user id, job id); thống kê thời gian chờ/chấm.
-- Kịch bản tải: 50 SV đăng nhập, 30 bài nộp gần như đồng thời, 15 test/bài; so sánh 1 worker vs nhiều worker (đề xuất thực nghiệm mục 14).
-- Sao lưu/khôi phục: `pg_dump` + `./data` cùng lúc.
-- Dọn file mồ côi, thư mục chấm tạm.
+- Log có cấu trúc (`slog`: request id từ chi, `worker_id`, `job_id`, `queue_wait_ms`, `judge_ms`).
+- `cmd/loadtest`: N SV đăng nhập cùng lúc, mở WebSocket (hoặc polling), tham gia phiên, nộp bài **cùng một thời điểm**; đo độ trễ, thông lượng, request, byte, tải DB. `scripts/experiment.sh` chạy E1–E4, `scripts/results.py` tổng hợp → `docs/results/RESULTS.md` (số liệu gốc `docs/results/runs.jsonl`).
+- **Cải tiến phát hiện khi đo:** worker rảnh chỉ polling 1 s nên bài chờ vô ích tới ~1 s → worker `LISTEN judge_events` để thức dậy ngay khi có bài (polling giữ làm dự phòng; `WORKER_LISTEN=false` để so sánh).
+- Dọn file mồ côi: API chạy định kỳ 30 phút, xóa file source cũ hơn 1 giờ không có submission nào trỏ tới. Worker xóa thư mục chấm tạm còn sót khi khởi động.
+- Sao lưu/khôi phục: `scripts/backup.sh` (pg_dump trước, rồi tar `./data`, manifest có checksum + số dòng), `scripts/restore.sh <dir> --verify` (khôi phục vào DB nháp + thư mục tạm, so khớp) hoặc `--yes` (thay dữ liệu đang chạy).
 
 **Checklist**
-- [ ] Đo: thời gian chờ hàng đợi, thời gian chấm, thông lượng, CPU/RAM với 1/2/4/8 worker — số liệu thật, ghi vào báo cáo
-- [ ] Không lỗi 5xx khi 50 client đồng thời
-- [ ] Khởi động lại toàn stack giữa chừng → không mất bài đã nhận, job được chấm tiếp
-- [ ] Sao lưu → xóa → khôi phục → dữ liệu và file khớp
+- [x] Đo: thời gian chờ hàng đợi, thời gian chấm, thông lượng, CPU/RAM với 1/2/4/8 worker — số liệu thật, ghi vào báo cáo — 23/10: `scripts/experiment.sh all` (50 SV, 50 bài cùng lúc, 15 test, 3 lần lặp): thông lượng 11,3 / 21,5 / 35,1 / 42,2 bài/s với 1/2/4/8 slot; 2 container × 4 slot = 41 bài/s. Bảng đầy đủ: `docs/results/RESULTS.md`. CPU/RAM lấy mẫu ~1 s, lần chạy ngắn có thể hụt đỉnh (ghi rõ trong file kết quả). Đo trên i5-12400F, chưa đo trên laptop i3
+- [x] So sánh worker polling vs NOTIFY — 23/10: chờ hàng đợi p50 1203 → 764 ms, e2e p50 1362 → 923 ms
+- [x] So sánh WebSocket vs polling phía client — 23/10: request 50 vs 118 (poll 1 s) / 237 (poll 250 ms); transaction DB 250 vs ~650; e2e p50 925 vs ~1095 ms; byte không giảm so với poll 1 s (giải thích trong `RESULTS.md`)
+- [x] Không lỗi 5xx khi 50 client đồng thời — 23/10: 31 lần chạy, 0 response không phải 2xx; đăng nhập p95 < 300 ms, nộp bài p95 < 100 ms
+- [x] Khởi động lại toàn stack giữa chừng → không mất bài đã nhận, job được chấm tiếp — 23/10: E4 (`docker compose restart` 4 s sau khi bắt đầu, client polling): 50/50 AC; 49 bài xong lần 1, 1 bài đang chấm dở được phục hồi sau khi lease 60 s hết hạn (lần thử 2, chờ 67 s) — kiểm bằng `judge_jobs.attempt_count`
+- [x] Sao lưu → xóa → khôi phục → dữ liệu và file khớp — 23/10: `backup.sh` → `restore.sh --verify` (số dòng 7 bảng khớp manifest, 2846 file được tham chiếu có đủ; sửa 1 byte archive → báo sai checksum) → `restore.sh --yes` trên stack dev: số dòng khớp, sha256 của 2846 file giống hệt trước khi khôi phục, `/healthz` 200, smoke 127/127
+- [x] Dọn file mồ côi — 23/10: unit test `TestCleanOrphansKeepsReferencedFiles`, `TestFSListOlderThan` (giữ file được tham chiếu và file mới hơn 1 giờ)
+- [x] Smoke sau toàn bộ thay đổi — 23/10: `scripts/smoke.sh all` 127/127 (sửa 1 kiểm tra bị đua với worker nhanh hơn)
+
+**Kiểm tra cuối phase**
+```bash
+scripts/experiment.sh all && python3 scripts/results.py
+scripts/backup.sh && scripts/restore.sh backups/<ts> --verify
+scripts/smoke.sh all
+```
 
 ---
 
