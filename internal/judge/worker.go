@@ -24,8 +24,11 @@ type Worker struct {
 }
 
 func NewWorker(svc *Service, id string, concurrency int, pollInterval time.Duration, log *slog.Logger) *Worker {
+	// Scan for expired leases at least twice per lease, so a crashed
+	// worker's job waits at most ~1.5 leases (capped at 30 s per scan).
+	recoverEvery := min(30*time.Second, max(svc.lease/2, time.Second))
 	return &Worker{svc: svc, id: id, concurrency: concurrency, pollInterval: pollInterval,
-		recoverInterval: 30 * time.Second, log: log.With("worker_id", id), wake: make(chan struct{}, concurrency)}
+		recoverInterval: recoverEvery, log: log.With("worker_id", id), wake: make(chan struct{}, concurrency)}
 }
 
 // Wake signals idle judging loops (non-blocking; extra signals are dropped).
@@ -43,7 +46,7 @@ func (w *Worker) Wake() {
 // or given up its lease.
 func (w *Worker) Run(ctx context.Context) error {
 	w.log.Info("worker started", "concurrency", w.concurrency, "judging", w.svc.Enabled(),
-		"lease", w.svc.lease, "max_attempts", w.svc.retry.MaxAttempts)
+		"lease", w.svc.lease, "recover_every", w.recoverInterval, "max_attempts", w.svc.retry.MaxAttempts)
 	if !w.svc.Enabled() {
 		w.log.Warn("no sandbox configured: jobs stay queued; only lease recovery runs")
 	}
