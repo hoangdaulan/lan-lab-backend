@@ -93,3 +93,12 @@ pre.plain { background: #f8fafc; color: var(--text); border: 1px solid var(--lin
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; }
+
+.lock { position: fixed; inset: 0; z-index: 30; background: rgba(15,23,42,.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.lock[hidden] { display: none; }
+.lock-box { background: #fff; border-radius: 10px; padding: 22px; max-width: 520px; text-align: center; }
+.lock-box h2 { margin-top: 0; }
+.screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; margin-top: 12px; }
+.screen-tile { background: #0f172a; border-radius: 8px; padding: 8px; color: #e2e8f0; }
+.screen-tile video { width: 100%; background: #000; border-radius: 4px; display: block; }
+.screen-tile .row { margin-bottom: 6px; }

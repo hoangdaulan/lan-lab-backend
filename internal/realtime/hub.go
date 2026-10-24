@@ -8,6 +8,7 @@
 //	                                         may be sent again to extend the
 //	                                         connection with a fresh token
 //	  subscribe  {"session_id": 12}          one session at a time
+//	  screen.*, webrtc.signal                screen sharing, see screen.go
 //	server → client
 //	  auth.ok          {"user_id", "role", "expires_at"}
 //	  subscribed       {"session_id"}
@@ -15,6 +16,8 @@
 //	  summary.updated  teacher board (as GET /sessions/{id}/summary)
 //	  announcement     {"id", "session_id", "text", "created_at"}
 //	  resync           {}   events may have been missed: reload over REST
+//	  screen.list, screen.view, screen.view.started, screen.stop,
+//	  webrtc.signal    screen sharing, see screen.go
 //	  error            {"message"}
 //
 // Close codes: 4001 authentication failed or token expired, 1008 too slow
@@ -66,6 +69,8 @@ type Client struct {
 	userID  int64
 	role    auth.Role
 	session int64 // subscribed session, 0 = none
+	sharing bool  // student: screen shared on this connection (screen.go)
+	seq     int64 // registration order
 	send    chan []byte
 	kick    func(reason string)
 }
@@ -74,17 +79,22 @@ type Hub struct {
 	loader Loader
 	log    *slog.Logger
 
-	mu      sync.Mutex
-	clients map[*Client]struct{}
-	dirty   map[int64]bool
+	mu       sync.Mutex
+	clients  map[*Client]struct{}
+	dirty    map[int64]bool
+	views    map[int64]*view // screen views by id (screen.go)
+	nextView int64
+	nextSeq  int64
 }
 
 func NewHub(loader Loader, log *slog.Logger) *Hub {
-	return &Hub{loader: loader, log: log, clients: map[*Client]struct{}{}, dirty: map[int64]bool{}}
+	return &Hub{loader: loader, log: log, clients: map[*Client]struct{}{}, dirty: map[int64]bool{}, views: map[int64]*view{}}
 }
 
 func (h *Hub) register(c *Client) {
 	h.mu.Lock()
+	h.nextSeq++
+	c.seq = h.nextSeq
 	h.clients[c] = struct{}{}
 	h.mu.Unlock()
 }
@@ -92,20 +102,45 @@ func (h *Hub) register(c *Client) {
 func (h *Hub) unregister(c *Client) {
 	h.mu.Lock()
 	delete(h.clients, c)
+	h.endViewsLocked(c, "disconnected")
 	if c.role == auth.RoleStudent && c.session != 0 {
 		h.dirty[c.session] = true // presence changed
+		h.pushScreenListLocked(c.session)
 	}
 	h.mu.Unlock()
 }
 
 func (h *Hub) subscribe(c *Client, sessionID int64) {
 	h.mu.Lock()
-	if c.role == auth.RoleStudent && c.session != 0 {
-		h.dirty[c.session] = true
+	old := c.session
+	if old != sessionID {
+		// Views and sharing belong to one session.
+		h.endViewsLocked(c, "changed session")
+		c.sharing = false
 	}
 	c.session = sessionID
+	if c.role == auth.RoleStudent {
+		if old != 0 {
+			h.dirty[old] = true
+			if old != sessionID {
+				h.pushScreenListLocked(old)
+			}
+		}
+		h.pushScreenListLocked(sessionID)
+	}
 	h.dirty[sessionID] = true // presence or a new teacher view
 	h.mu.Unlock()
+}
+
+// sendScreenList sends the session's screen.list to one teacher connection
+// (right after it subscribes).
+func (h *Hub) sendScreenList(c *Client) {
+	if c.role != auth.RoleTeacher || c.session == 0 {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sendLocked(c, encode("screen.list", map[string]any{"session_id": c.session, "students": h.screenListLocked(c.session)}))
 }
 
 // sendLocked queues msg; a client that cannot keep up is disconnected

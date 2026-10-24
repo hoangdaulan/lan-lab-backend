@@ -22,7 +22,7 @@ var (
 )
 
 const (
-	maxMessage       = 4 << 10
+	maxMessage       = 64 << 10 // WebRTC session descriptions are a few KB
 	closeAuth        = websocket.StatusCode(4001)
 	maxConnsPerUser  = 8
 	tokenExpiredText = "token expired"
@@ -201,6 +201,43 @@ func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *Client,
 			}
 			h.hub.subscribe(c, d.SessionID)
 			reply("subscribed", map[string]int64{"session_id": d.SessionID})
+			h.hub.sendScreenList(c)
+		case "screen.state":
+			var d screenStateData
+			if err := json.Unmarshal(m.Data, &d); err != nil {
+				reply("error", map[string]string{"message": "screen.state needs sharing"})
+				continue
+			}
+			if err := h.hub.setScreen(c, d.Sharing); err != nil {
+				reply("error", map[string]string{"message": err.Error()})
+			}
+		case "screen.view":
+			var d screenViewData
+			if err := json.Unmarshal(m.Data, &d); err != nil || d.StudentID <= 0 {
+				reply("error", map[string]string{"message": "screen.view needs student_id"})
+				continue
+			}
+			if _, err := h.hub.startView(c, d.StudentID); err != nil {
+				reply("error", map[string]string{"message": err.Error()})
+			}
+		case "webrtc.signal":
+			var d signalData
+			if err := json.Unmarshal(m.Data, &d); err != nil {
+				reply("error", map[string]string{"message": "invalid webrtc.signal"})
+				continue
+			}
+			if err := h.hub.relaySignal(c, d); err != nil {
+				reply("error", map[string]string{"message": err.Error()})
+			}
+		case "screen.stop":
+			var d viewIDData
+			if err := json.Unmarshal(m.Data, &d); err != nil {
+				reply("error", map[string]string{"message": "screen.stop needs view_id"})
+				continue
+			}
+			if err := h.hub.stopView(c, d.ViewID); err != nil {
+				reply("error", map[string]string{"message": err.Error()})
+			}
 		default:
 			reply("error", map[string]string{"message": "unknown message type " + m.Type})
 		}

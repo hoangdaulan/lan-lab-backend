@@ -2,6 +2,7 @@
 // submissions, announcements, queue.
 import { get, post, put, del, upload, request } from './api.js';
 import * as live from './live.js';
+import * as screen from './screen.js';
 import {
   html, raw, mount, $, $$, busy, toast, modal, showError, errText, fmtTime, fmtClock,
   toLocalInput, fromLocalInput, stateBadge, resultBadge, resultText, pager, formData, downloadBlob,
@@ -316,7 +317,7 @@ function sessionForm(examId, s, done) {
 
 // ---------------------------------------------------------------- session
 
-const TABS = [['board', 'Bảng trực tiếp'], ['submissions', 'Bài nộp'], ['participants', 'Người tham gia'], ['announcements', 'Thông báo']];
+const TABS = [['board', 'Bảng trực tiếp'], ['screens', 'Màn hình SV'], ['submissions', 'Bài nộp'], ['participants', 'Người tham gia'], ['announcements', 'Thông báo']];
 
 async function sessionPage(root, [id, tab = 'board'], ctx) {
   const info = await get(`/sessions/${id}`);
@@ -338,6 +339,78 @@ async function sessionPage(root, [id, tab = 'board'], ctx) {
   if (tab === 'submissions') return submissionsTab(box, id, info, ctx);
   if (tab === 'participants') return participantsTab(box, id, ctx);
   if (tab === 'announcements') return announcementsTab(box, id, ctx);
+  if (tab === 'screens') return screensTab(box, id, ctx);
+}
+
+// Students working in the session with their screen-sharing state; click to
+// watch a screen live (WebRTC peer to peer, see screen.js).
+async function screensTab(box, id, ctx) {
+  mount(box, html`
+    <div class="row small" style="margin-bottom:8px"><span id="scr-sum" class="muted"></span></div>
+    <table><tr><th>MSV</th><th>Họ tên</th><th>Bài làm</th><th>Màn hình</th><th></th></tr><tbody id="scr-rows"></tbody></table>
+    <p class="muted small">Sinh viên phải chia sẻ toàn màn hình mới làm bài được. Video đi thẳng từ máy sinh viên tới máy này trong LAN; xem tối đa 4 màn hình cùng lúc.</p>
+    <div class="screens" id="scr-tiles"></div>`);
+  let participants = [];
+  let online = new Map(); // student_id -> sharing
+  const tiles = new Map(); // student_id -> {el, stop}
+
+  const draw = () => {
+    const rows = participants.map((p) => ({ ...p, conn: online.has(p.student_id), sharing: online.get(p.student_id) === true }));
+    const sharing = rows.filter((r) => r.sharing).length;
+    $('#scr-sum').textContent = `${sharing} đang chia sẻ · ${rows.filter((r) => r.conn).length} đang mở trang · ${rows.length} đã tham gia`;
+    mount($('#scr-rows'), rows.map((r) => html`<tr>
+      <td><span class="dot ${r.conn ? 'on' : ''}"></span>${r.student_code}</td><td>${r.student_fullname}</td>
+      <td class="small">${r.status === 'finished' ? 'Đã kết thúc' : 'Đang làm'}</td>
+      <td>${r.sharing ? html`<span class="badge ok">Đang chia sẻ</span>` : r.conn ? html`<span class="badge bad">Chưa/đã tắt chia sẻ</span>` : html`<span class="badge">Offline</span>`}</td>
+      <td>${r.sharing ? html`<button data-watch="${r.student_id}" ${tiles.has(r.student_id) ? raw('disabled') : ''}>Xem màn hình</button>` : ''}</td></tr>`));
+    if (!rows.length) mount($('#scr-rows'), html`<tr><td colspan="5" class="muted">Chưa có sinh viên tham gia</td></tr>`);
+  };
+  const name = (sid) => { const p = participants.find((x) => x.student_id === sid); return p ? `${p.student_code} — ${p.student_fullname}` : `SV #${sid}`; };
+
+  const closeTile = (sid) => {
+    const t = tiles.get(sid);
+    if (!t) return;
+    tiles.delete(sid);
+    t.stop();
+    t.el.remove();
+    draw();
+  };
+  const openTile = (sid) => {
+    if (tiles.has(sid)) return;
+    const el = document.createElement('div');
+    el.className = 'screen-tile';
+    mount(el, html`<div class="row"><b>${name(sid)}</b><span class="spacer"></span><span class="small" data-st>Đang kết nối…</span>
+      <button data-close>Đóng</button></div><video autoplay playsinline muted></video>`);
+    $('#scr-tiles').append(el);
+    const video = el.querySelector('video'), st = el.querySelector('[data-st]');
+    el.querySelector('[data-close]').onclick = () => closeTile(sid);
+    video.ondblclick = () => video.requestFullscreen && video.requestFullscreen();
+    const stop = screen.watch(sid, {
+      onTrack: (ms) => { video.srcObject = ms; st.textContent = 'Trực tiếp (nhấp đúp để phóng to)'; },
+      onEnd: () => { st.textContent = 'Đã dừng'; setTimeout(() => closeTile(sid), 1500); },
+      onError: (msg) => { toast(`${name(sid)}: ${errText({ message: msg })}`, 'error'); closeTile(sid); },
+    });
+    tiles.set(sid, { el, stop });
+    draw();
+  };
+
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-watch]');
+    if (b) openTile(Number(b.dataset.watch));
+  });
+  ctx.on('screen.list', (d) => {
+    if (String(d.session_id) !== String(id)) return;
+    online = new Map(d.students.map((x) => [x.student_id, x.sharing]));
+    for (const sid of [...tiles.keys()]) if (online.get(sid) !== true) closeTile(sid);
+    draw();
+  });
+  const loadParticipants = async () => { participants = (await get(`/sessions/${id}/participants`, { pageSize: 200 })).data; draw(); };
+  ctx.on('resync', () => loadParticipants().catch(() => {}));
+  ctx.every(15_000, () => loadParticipants().catch(() => {}));
+  ctx.onCleanup(() => { for (const sid of [...tiles.keys()]) closeTile(sid); });
+  await loadParticipants();
+  // Ask for the current list (the page may have subscribed before this tab).
+  live.send('subscribe', { session_id: Number(id) });
 }
 
 function boardTab(box, id, info, ctx) {

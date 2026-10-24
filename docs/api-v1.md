@@ -347,7 +347,7 @@ Chấm lại một bài: run hiện hành và job của nó chuyển `obsolete`,
 `GET /api/v1/ws` (HTTP Upgrade). Không dùng header Authorization: token gửi trong message đầu để không lộ trên URL/log.
 
 - **Origin:** chỉ cùng origin với API, cộng các mẫu trong biến môi trường `WS_ALLOWED_ORIGINS` (vd. `localhost:5173` cho FE dev). Origin lạ → 403, không upgrade.
-- **Message:** JSON text `{"type": string, "data": object}`, tối đa 4 KB từ client.
+- **Message:** JSON text `{"type": string, "data": object}`, tối đa 64 KB từ client.
 
 Client → server:
 
@@ -367,12 +367,36 @@ Server → client:
 | `announcement` | `{id, session_id, text, created_at}` | mọi client đang subscribe phiên |
 | `resync` | `{}` | mọi client, khi server có thể đã lỡ sự kiện → tải lại bằng REST |
 | `error` | `{message}` | message không hợp lệ / subscribe bị từ chối |
+| `screen.list` | `{session_id, students: [{student_id, sharing}]}` | GV đang subscribe phiên: sau `subscribed` và mỗi khi SV vào/ra/bật/tắt chia sẻ |
+| `screen.view` | `{view_id, teacher_id}` | SV đang chia sẻ: có GV muốn xem → tạo offer |
+| `screen.view.started` | `{view_id, student_id}` | GV vừa yêu cầu xem |
+| `webrtc.signal` | `{view_id, kind, payload}` | đầu kia của đúng view đó |
+| `screen.stop` | `{view_id, reason}` | cả GV và SV của view |
 
 Vòng đời một bài: nộp (REST 202) → `run.updated` `queued` → `judging` → `completed` (`passed_tests/total_tests verdict`). Chấm lại (problem hoặc 1 bài) → mọi SV bị ảnh hưởng nhận `queued` ở version mới rồi kết quả mới.
 
 - **Mã đóng:** `4001` xác thực sai / không gửi auth kịp / token hết hạn; `1008` client đọc quá chậm (bộ đệm đầy) hoặc quá 8 kết nối/tài khoản; `1000` bình thường.
 - **Ping/pong** mỗi 20 s; không có pong → server đóng (phát hiện mất mạng).
 - **Nối lại:** client mở lại kết nối, `auth` + `subscribe`, rồi tải trạng thái bằng REST (`/submissions/{id}`, `/sessions/{id}/summary`, `/announcements`). Server không gửi lại sự kiện đã lỡ.
+### Chia sẻ màn hình (phase 16)
+
+SV trong phiên đang mở phải chia sẻ **toàn bộ màn hình** mới làm bài được (giao diện khóa). GV của phiên thấy ai đang chia sẻ và xem trực tiếp màn hình một SV. Video đi **ngang hàng qua LAN** bằng WebRTC (`iceServers: []`, không STUN/TURN, không qua server); server chỉ giữ trạng thái và chuyển tín hiệu.
+
+Client → server (thêm):
+
+| type | data | Ai gửi / kiểm tra |
+|---|---|---|
+| `screen.state` | `{sharing: bool}` | SV đã subscribe phiên; gửi lại sau mỗi `subscribed` (server quên khi nối lại/đổi phiên) |
+| `screen.view` | `{student_id}` | GV đã subscribe phiên của mình; SV phải đang chia sẻ trong **cùng phiên**; tối đa 4 view/kết nối GV |
+| `webrtc.signal` | `{view_id, kind: "offer"\|"answer"\|"ice", payload}` | chỉ hai kết nối của view; server chuyển nguyên văn cho đầu kia |
+| `screen.stop` | `{view_id}` | một trong hai đầu |
+
+Luồng: GV `screen.view` → server tạo `view_id`, gửi `screen.view` cho kết nối SV đang chia sẻ (tab mới nhất) và `screen.view.started` cho GV → SV tạo `RTCPeerConnection`, gắn track màn hình, gửi `offer` → GV trả `answer` → hai bên trao `ice` → video chạy. View kết thúc (`screen.stop` cho cả hai) khi một bên gửi `screen.stop`, SV tắt chia sẻ, một bên mất kết nối hoặc đổi phiên.
+
+- Trình duyệt chỉ cho `getDisplayMedia` trong *secure context* → giao diện chạy trên HTTPS `https://<IP>:8443` (chứng chỉ tự ký, server tự tạo trong `DATA_DIR/tls`, phủ `localhost` + `TLS_HOSTS`). `http://<IP>:8080/` từ máy khác chuyển hướng sang HTTPS; HTTP vẫn dùng cho script.
+- Giới hạn message từ client: 64 KB (SDP vài KB).
+- Server **không** chặn nộp bài khi SV tắt chia sẻ (khóa ở giao diện); GV thấy trạng thái trong tab "Màn hình SV".
+
 - **Nguồn sự kiện:** mọi chỗ đổi trạng thái run gọi `pg_notify('judge_events', ...)` trong cùng transaction (chỉ gửi sau COMMIT); API giữ một kết nối `LISTEN`, nạp lại trạng thái từ DB rồi đẩy. Mất kết nối `LISTEN` → tự nối lại (backoff 1–10 s) và gửi `resync`.
 
 ## Chi tiết Export và hàng đợi

@@ -2,6 +2,7 @@
 // live results, announcements, countdown, finish).
 import { get, post, upload, request } from './api.js';
 import * as live from './live.js';
+import * as screen from './screen.js';
 import {
   html, mount, $, busy, toast, modal, showError, errText, fmtTime, fmtClock, fmtDuration, stateBadge, resultBadge,
 } from './ui.js';
@@ -93,6 +94,7 @@ async function roomPage(root, [sid, pidParam], ctx) {
       <div><div class="muted small">${s.exam_title}</div><h1 style="margin:0">${s.name}</h1></div>
       ${stateBadge(s.state)}
       ${part ? html`<span class="badge ${part.status === 'finished' ? '' : 'info'}">${part.status === 'finished' ? 'Bạn đã kết thúc bài làm' : 'Đang làm bài'}</span>` : ''}
+      <span id="share-badge"></span>
       <span class="spacer"></span>
       <div style="text-align:right"><div class="muted small" id="cd-label"></div><div class="countdown" id="cd"></div></div>
       ${part && part.status !== 'finished' && s.state === 'running' ? html`<button class="danger" id="finish">Kết thúc làm bài</button>` : ''}
@@ -112,6 +114,19 @@ async function roomPage(root, [sid, pidParam], ctx) {
       </div>` : ''}
     ${part && !problems.length && info.problems_hidden ? html`<div class="panel muted">Đề sẽ hiện khi phiên bắt đầu.</div>` : ''}`);
 
+  // Screen sharing is required while working: the room stays locked until
+  // the whole screen is shared, and locks again if sharing stops.
+  const working = part && part.status !== 'finished' && s.state === 'running';
+  if (working) {
+    ctx.onCleanup(screen.lockOverlay());
+    const badge = () => mount($('#share-badge', root), screen.isSharing()
+      ? html`<span class="badge ok">● Đang chia sẻ màn hình</span>` : html`<span class="badge bad">Chưa chia sẻ màn hình</span>`);
+    badge();
+    ctx.onCleanup(screen.onShareChange(badge));
+  } else {
+    screen.stopShare();
+  }
+
   // Countdown; reload the room when the session starts or ends.
   const startMs = Date.parse(s.starts_at), endMs = Date.parse(s.ends_at);
   const tick = () => {
@@ -130,7 +145,7 @@ async function roomPage(root, [sid, pidParam], ctx) {
   const finishBtn = $('#finish', root);
   if (finishBtn) finishBtn.onclick = () => {
     if (!confirm('Kết thúc làm bài? Sau khi kết thúc bạn KHÔNG nộp thêm được nữa.')) return;
-    busy(finishBtn, async () => { await post(`/sessions/${sid}/finish`); toast('Đã kết thúc làm bài', 'ok'); reloadPage(); });
+    busy(finishBtn, async () => { await post(`/sessions/${sid}/finish`); screen.stopShare(); toast('Đã kết thúc làm bài', 'ok'); reloadPage(); });
   };
 
   // Announcements (REST on load / resync, WS live).

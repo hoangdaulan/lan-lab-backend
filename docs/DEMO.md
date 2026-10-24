@@ -21,7 +21,7 @@ TEACHER_CODE=GV01 TEACHER_PASSWORD='<mật khẩu>' scripts/demo-setup.sh
 
 `demo-setup.sh` in ra `session_id`, `problem_A` (a+b, 15 test), `problem_B` (tổng 1..n, giới hạn 200 ms — vòng lặp ngây thơ bị TLE) và tạo SV `DEMO01..DEMO05` (mật khẩu = mã).
 
-Màn hình nên mở sẵn (giao diện web: `http://<IP>:8080/`):
+Màn hình nên mở sẵn (giao diện web: `https://<IP>:8443/`, chấp nhận cảnh báo chứng chỉ tự ký một lần):
 0. Trình duyệt GV: đăng nhập → Đề thi → mở phiên → tab "Bảng trực tiếp". Trình duyệt SV (máy khác, hoặc tab ẩn danh): đăng nhập `DEMO01`/`DEMO01` → Phiên thi → "Vào làm bài". Các bước 2–7 bên dưới làm được hoàn toàn trên giao diện web (nộp bằng ô soạn code; thông báo ở tab "Thông báo"; chấm lại bằng nút "Quét test & chấm lại" ở trang đề).
 1. Swagger UI: `http://<IP>:8080/swagger/index.html` (đăng nhập GV, Authorize).
 2. Terminal GV — bảng trực tiếp qua WebSocket:
@@ -41,6 +41,7 @@ Màn hình nên mở sẵn (giao diện web: `http://<IP>:8080/`):
 | 6 | Sửa `./data/problems/<A>/tests/15.out` trên máy chủ → `POST /problems/<A>/rejudge` | Bài AC lúc trước thành `14/15 WA` (version mới); sửa lại → `15/15 AC` |
 | 7 | Nộp B lần nữa, khi đang `judging` thì `docker compose kill worker`, rồi `docker compose up -d worker` | Bài không mất: sau khi lease hết hạn worker phục hồi job và chấm lại (`attempt_count = 2`) — dùng `WORKER_LEASE=15s` cho demo |
 | 8 | Rút mạng / tắt Wi-Fi máy SV vài giây rồi nối lại | Kết nối WS đóng (ping/pong); client nối lại + `GET /submissions/{id}` lấy trạng thái hiện tại |
+| 8b | SV chia sẻ toàn màn hình (trang làm bài mới mở khóa); GV tab "Màn hình SV" → "Xem màn hình". SV bấm "Dừng chia sẻ" trên thanh của trình duyệt | GV thấy màn hình SV trực tiếp (WebRTC ngang hàng, server chỉ chuyển tín hiệu qua WebSocket); SV tắt → trang SV khóa lại, GV thấy "đã tắt" |
 | 9 | `go run ./cmd/loadtest -base http://<IP>:8080 -students 50 -tests 15 -mode ws` | 50 SV đăng nhập + nộp cùng lúc: 50/50 AC, không lỗi HTTP; bảng GV nhảy số |
 | 10 | Mở `docs/results/RESULTS.md` | Số liệu thật: 1 → 8 slot, polling vs NOTIFY, WebSocket vs polling, restart giữa chừng |
 
