@@ -446,7 +446,7 @@ Thông tin đăng nhập cho smoke test nằm trong `.smoke.env` (git-ignore, t�
 
 ## Phase 13 — Chống gian lận
 
-**Đã chốt 22/10/2026: không làm** thêm tính năng nào (câu 10). Những gì đã có nhờ thiết kế: danh tính lấy từ JWT, không tin ID client; thời gian theo server; không lộ test ẩn; SV không xem bài người khác. `BACKEND_CONTEXT.md` mục 13: theo dõi rời tab, phát hiện giống code vẫn ngoài phạm vi.
+**Đã chốt 22/10/2026: không làm** thêm tính năng nào (câu 10). *Cập nhật 23/10: giám sát bằng chia sẻ màn hình được thêm ở phase 16 theo yêu cầu.* Những gì đã có nhờ thiết kế: danh tính lấy từ JWT, không tin ID client; thời gian theo server; không lộ test ẩn; SV không xem bài người khác. `BACKEND_CONTEXT.md` mục 13: theo dõi rời tab, phát hiện giống code vẫn ngoài phạm vi.
 
 ---
 
@@ -547,3 +547,27 @@ Từ `BACKEND_CONTEXT.md` mục 13 và các điểm phát sinh khi triển khai.
 14. **sqlc** (Makefile + `sqlc.yaml` có, nhưng chưa dùng vì không tải được).
     - **Đã chốt 22/10/2026: duyệt, đã làm** — xóa `sqlc.yaml`, `queries/`, target `make sqlc`.
     - Đề xuất: giữ repository pgx viết tay (đã có test + smoke), **bỏ** `sqlc.yaml`, `queries/` và target `make sqlc` để tài liệu khớp thực tế; nếu sau này cài được sqlc thì chuyển dần từng feature.
+
+## Phase 16 — Chia sẻ màn hình bắt buộc, GV xem trực tiếp
+
+**Yêu cầu (23/10/2026):** SV vào phiên đang mở phải chia sẻ màn hình (bắt buộc); GV trong trang quản lý phiên thấy danh sách SV đang làm bài và chọn một SV để xem màn hình trực tiếp.
+
+**Thiết kế**
+- HTTPS: `getDisplayMedia` chỉ có trong secure context. API phục vụ thêm `:8443` bằng chứng chỉ tự ký (`internal/tlscert`, tạo trong `DATA_DIR/tls`, phủ `localhost`, `127.0.0.1`, `TLS_HOSTS`; giữ nguyên qua các lần khởi động để mỗi máy chỉ chấp nhận cảnh báo một lần). `:8080` giữ cho script; trình duyệt từ máy khác mở `/` qua HTTP được chuyển sang HTTPS.
+- Video ngang hàng qua LAN bằng WebRTC, không STUN/TURN, không đi qua server (50 luồng video qua server sẽ là nút thắt). Chỉ màn hình đang được xem mới gửi video.
+- Báo hiệu qua hub WebSocket sẵn có: `screen.state`, `screen.list`, `screen.view`, `webrtc.signal`, `screen.stop` (`internal/realtime/screen.go`, `docs/api-v1.md`). Server chỉ ghép **đúng một** kết nối GV với **một** kết nối SV cùng phiên; GV phải sở hữu phiên (kiểm khi subscribe).
+- Giao diện SV: lớp phủ khóa trang làm bài tới khi chia sẻ thành công với `displaySurface = "monitor"` (từ chối cửa sổ/tab); tắt chia sẻ → khóa lại; kết thúc làm bài → dừng chia sẻ. Giao diện GV: tab "Màn hình SV" (đang chia sẻ / đã tắt / offline), tối đa 4 ô video.
+- Không chặn nộp bài ở server khi tắt chia sẻ (khóa giao diện là đủ theo yêu cầu; GV thấy trạng thái).
+
+**Checklist**
+- [x] HTTPS chạy, chia sẻ màn hình khả dụng — 24/10: Chrome headless trên `https://192.168.1.9:8443/`: `isSecureContext = true`, có `getDisplayMedia`, `displaySurface = "monitor"`; `http://192.168.1.9:8080/` → 302 sang HTTPS; chứng chỉ giữ nguyên sau khi tạo lại container (`created=false`). Unit test `internal/tlscert`
+- [x] Định tuyến và phân quyền báo hiệu — unit test `internal/realtime/screen_test.go`: danh sách theo phiên; SV/GV khác phiên không chen vào view; view kết thúc khi tắt chia sẻ, mất kết nối, đổi phiên; tối đa 4 view/GV; `go test -race`
+- [x] Luồng thật trên 2 trình duyệt — 24/10: `scripts/ui-e2e/screen-share.mjs` (Chrome headless, 2 browser context, cả qua `https://localhost:8443` và `https://192.168.1.9:8443`): trang khóa → chia sẻ → mở khóa; GV thấy "Đang chia sẻ", nhận video 800×450 sau ~0,6 s; SV tắt → khóa lại, ô video GV đóng, danh sách "đã tắt"; chia sẻ lại; kết thúc làm bài → dừng chia sẻ. 11/11 kiểm tra
+- [x] Test cũ không vỡ — `go test ./...`, `make test-integration` đều qua
+- [ ] Thử trên máy SV thật trong phòng máy (cảnh báo chứng chỉ, chọn "Toàn màn hình", mDNS ICE giữa các máy) — cần làm khi có phòng máy
+
+**Kiểm tra cuối phase**
+```bash
+go test ./internal/tlscert ./internal/realtime
+TEACHER_CODE=GV001 TEACHER_PASSWORD=... node scripts/ui-e2e/screen-share.mjs
+```

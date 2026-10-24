@@ -364,11 +364,14 @@ Sửa `.env`:
 | `POSTGRES_PASSWORD` | mật khẩu DB (`openssl rand -hex 16`) |
 | `JWT_SECRET` | khóa ký JWT, ≥ 32 ký tự (`openssl rand -hex 32`) |
 | `APP_UID`, `APP_GID` | uid/gid của người dùng sở hữu `./data` (`id -u`, `id -g`) |
-| `API_PORT` | cổng trên LAN (mặc định 8080); `DB_PORT` cổng PostgreSQL chỉ trên 127.0.0.1 (5433) |
+| `API_PORT` | cổng HTTP (mặc định 8080, cho script/công cụ); `DB_PORT` cổng PostgreSQL chỉ trên 127.0.0.1 (5433) |
+| `API_HTTPS_PORT`, `TLS_HOSTS` | cổng HTTPS cho trình duyệt (8443) và IP LAN của máy chủ cho chứng chỉ, vd. `TLS_HOSTS=192.168.1.9` |
 | `WORKER_CONCURRENCY` | số bài chấm song song mỗi worker (mặc định 2; thực nghiệm: 4–8 trên 12 luồng) |
 | `WS_ALLOWED_ORIGINS` | thêm Origin cho frontend chạy ở cổng khác (vd. `localhost:5173`) |
 
-Mở cổng cho LAN nếu dùng tường lửa: `sudo ufw allow 8080/tcp`.
+Mở cổng cho LAN nếu dùng tường lửa: `sudo ufw allow 8080/tcp && sudo ufw allow 8443/tcp`.
+
+**HTTPS và chứng chỉ tự ký.** Trình duyệt chỉ cho chia sẻ màn hình trên HTTPS, nên SV và GV mở `https://<IP-máy-chủ>:8443/` (`http://<IP>:8080/` tự chuyển sang). Khi khởi động, API tự tạo chứng chỉ tự ký trong `./data/tls/` (phủ `localhost`, `127.0.0.1` và `TLS_HOSTS`) và giữ nguyên ở các lần sau. Lần đầu mỗi máy sẽ thấy cảnh báo "Kết nối không riêng tư": bấm **Nâng cao → Tiếp tục**. Muốn bỏ cảnh báo: cài `./data/tls/cert.pem` vào kho chứng chỉ tin cậy của máy SV (Windows: `certutil -addstore -f Root cert.pem`; Chrome/Edge dùng kho của hệ điều hành). Đổi IP máy chủ → sửa `TLS_HOSTS` rồi `docker compose up -d api` (chứng chỉ mới được tạo, các máy phải chấp nhận lại).
 
 > **Chạy nhiều bản trên cùng máy:** Docker Compose đặt tên project theo **tên thư mục**. Hai bản cùng nằm trong thư mục tên `backend` sẽ dùng chung container/volume. Khi đó đặt `COMPOSE_PROJECT_NAME=<tên khác>` trong `.env` (và đổi `API_PORT`, `DB_PORT`).
 
@@ -389,9 +392,10 @@ Từ máy khác trong LAN: `http://<IP-máy-chủ>:8080/healthz`, Swagger UI: `h
 
 ## 11.2. Start Client
 
-**Giao diện web có sẵn** (HTML/CSS/JS thuần, nhúng trong binary API, không cần Internet hay build): mở `http://<IP-máy-chủ>:8080/` trên trình duyệt của mọi máy trong LAN.
+**Giao diện web có sẵn** (HTML/CSS/JS thuần, nhúng trong binary API, không cần Internet hay build): mở `https://<IP-máy-chủ>:8443/` trên trình duyệt (Chrome/Edge/Firefox mới) của mọi máy trong LAN.
 
 * Giáo viên: quản lý sinh viên (thêm, import CSV, đặt lại mật khẩu), đề → bài (đề bài, giới hạn, thư mục test, "Quét test & chấm lại") → phiên; bảng trực tiếp `x/N AC` (online, hàng đợi), bài nộp (mã nguồn, kết quả từng test, chấm lại), thông báo, xuất CSV, trang hàng đợi.
+* Chia sẻ màn hình (bắt buộc): SV vào phiên đang mở phải chia sẻ **toàn bộ màn hình** thì trang làm bài mới mở khóa; tắt chia sẻ là khóa lại. GV mở phiên → tab **"Màn hình SV"**: ai đang chia sẻ / đã tắt / offline, bấm "Xem màn hình" để xem trực tiếp (tối đa 4 ô, nhấp đúp để phóng to). Video đi thẳng giữa hai máy trong LAN bằng WebRTC, không qua server. Kiểm thử tự động: `TEACHER_CODE=... TEACHER_PASSWORD=... node scripts/ui-e2e/screen-share.mjs` (cần Google Chrome).
 * Sinh viên: danh sách phiên (đếm ngược theo giờ server), tự tham gia, đề bài, ô soạn code (Tab thụt lề, số dòng, lưu nháp trên máy) hoặc chọn file `.cpp`, kết quả cập nhật trực tiếp (`đang chờ → đang chấm… → 10/15 TLE`), xem lỗi biên dịch, thông báo của GV, nút "Kết thúc làm bài".
 * Mất kết nối WebSocket → hiện "Mất kết nối", tự nối lại (1–10 s) rồi tải lại trạng thái bằng REST. Access token tự làm mới trước khi hết hạn; mỗi tab giữ phiên đăng nhập riêng (đóng tab là đăng xuất).
 * Mã nguồn: `web/static/` (`app.js` router + đăng nhập, `teacher.js`, `student.js`, `live.js` WebSocket, `api.js` REST). Sửa xong: `docker compose up -d --build --no-deps api`.
