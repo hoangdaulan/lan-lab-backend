@@ -56,7 +56,9 @@ export function stop() {
 }
 
 let authed = false;
-function send(type, data) {
+// send queues nothing: a message sent while disconnected is dropped (callers
+// re-send their state on "subscribed").
+export function send(type, data) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type, data }));
 }
 
