@@ -19,6 +19,22 @@ type Config struct {
 	// so students on the LAN can reach http://<server-ip>:8080.
 	HTTPAddr string
 
+	// HTTPSAddr is the HTTPS listen address (":8443"); empty disables HTTPS.
+	// Browsers allow screen sharing only in a secure context, so students
+	// and teachers use https://<server-ip>:8443; plain HTTP stays for tools.
+	HTTPSAddr string
+
+	// HTTPSPublicPort is the HTTPS port as seen by browsers (the host port
+	// Compose publishes), used to redirect http://<LAN-IP>:8080/ there.
+	HTTPSPublicPort string
+
+	// TLSDir holds the self-signed certificate and key (created on start).
+	TLSDir string
+
+	// TLSHosts are extra names/IPs the certificate must cover, typically the
+	// server's LAN IP (a container only sees its own bridge address).
+	TLSHosts []string
+
 	// JWTSecret signs access tokens. Refresh tokens are random strings stored
 	// only as hashes (see BACKEND_CONTEXT.md §4), so they need no secret.
 	// Algorithm is HS256 (BACKEND_CONTEXT.md §17).
@@ -65,6 +81,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
+		HTTPSAddr:   os.Getenv("HTTPS_ADDR"),
 		JWTSecret:   os.Getenv("JWT_SECRET"),
 		DataDir:     getenv("DATA_DIR", "/data"),
 		WorkerID:    os.Getenv("WORKER_ID"),
@@ -72,11 +89,10 @@ func Load() (Config, error) {
 		JudgeWorkDir: getenv("JUDGE_WORK_DIR", "/var/judge"),
 	}
 	cfg.WorkerListen = os.Getenv("WORKER_LISTEN") != "false"
-	for _, o := range strings.Split(os.Getenv("WS_ALLOWED_ORIGINS"), ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
-		}
-	}
+	cfg.HTTPSPublicPort = getenv("HTTPS_PUBLIC_PORT", "8443")
+	cfg.TLSDir = getenv("TLS_DIR", strings.TrimRight(cfg.DataDir, "/")+"/tls")
+	cfg.TLSHosts = splitList(os.Getenv("TLS_HOSTS"))
+	cfg.WSAllowedOrigins = splitList(os.Getenv("WS_ALLOWED_ORIGINS"))
 
 	var err error
 	if cfg.WorkerConcurrency, err = getenvInt("WORKER_CONCURRENCY", 2); err != nil {
@@ -132,6 +148,17 @@ func (c Config) RequireWorker() error {
 		errs = append(errs, errors.New("WORKER_ID is required (hostname lookup failed)"))
 	}
 	return errors.Join(errs...)
+}
+
+// splitList parses a comma-separated list, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, o := range strings.Split(v, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 func getenv(key, def string) string {
