@@ -28,7 +28,7 @@ export const teacherRoutes = [
 async function studentsPage(root) {
   let query = '', page = 1;
   mount(root, html`
-    <h1>Sinh viên</h1>
+    <div class="page-heading"><div><span class="breadcrumb">Giảng dạy / Quản lý lớp</span><h1>Sinh viên</h1><p>Quản lý danh sách lớp và tài khoản sinh viên.</p></div></div>
     <div class="grid2">
       <div class="panel"><h3>Thêm một sinh viên</h3>
         <form class="inline" id="add">
@@ -38,17 +38,17 @@ async function studentsPage(root) {
         </form>
         <p class="muted small">Mật khẩu ban đầu = MSV.</p>
       </div>
-      <div class="panel"><h3>Import CSV</h3>
+      <div class="panel"><h3>Nhập danh sách CSV</h3>
         <form class="inline" id="imp">
           <input type="file" name="file" accept=".csv,text/csv" required>
-          <button class="primary">Import</button>
+          <button class="primary">Nhập CSV</button>
         </form>
         <p class="muted small">Dòng đầu: <code>code,full_name</code>. Có dòng lỗi thì không lưu gì; MSV đã có thì bỏ qua.</p>
         <div id="imp-result"></div>
       </div>
     </div>
     <div class="panel">
-      <form class="inline" id="search"><input name="q" placeholder="Tìm theo MSV hoặc tên"><button>Tìm</button></form>
+      <form class="inline" id="search"><label class="search-field"><input name="q" type="search" aria-label="Tìm sinh viên theo mã hoặc họ tên" placeholder="Tìm theo mã sinh viên hoặc họ tên…"></label><button>Tìm kiếm</button></form>
       <div id="list"></div>
     </div>`);
 
@@ -105,15 +105,16 @@ async function studentsPage(root) {
 async function examsPage(root) {
   const list = await get('/exams', { pageSize: 200 });
   mount(root, html`
-    <h1>Đề thi</h1>
-    <div class="panel"><h3>Tạo đề mới</h3>
+    <div class="page-heading"><div><span class="breadcrumb">Giảng dạy / Thư viện</span><h1>Đề thi</h1><p>Chuẩn bị bài tập, quản lý bộ test và tổ chức phiên thi.</p></div><span class="page-meta">${list.data.length} đề thi</span></div>
+    <div class="panel create-exam"><div class="form-intro"><h3>Tạo đề mới</h3><p>Thêm đề thi, sau đó thiết lập bài tập và thời gian làm bài.</p></div>
       <form class="inline" id="new">
         <label>Tên đề<input name="title" required maxlength="255" size="40"></label>
         <label>Mô tả<input name="description" size="40"></label>
-        <button class="primary">Tạo</button>
+        <button class="primary">Tạo đề thi</button>
       </form>
     </div>
-    <table><tr><th>#</th><th>Tên đề</th><th>Mô tả</th><th>Cập nhật</th></tr>
+    <div class="section-heading"><h2>Thư viện đề thi</h2><span class="muted">Chọn đề để quản lý</span></div>
+    <table class="exam-table"><tr><th>Mã đề</th><th>Tên đề</th><th>Mô tả</th><th>Cập nhật</th></tr>
       ${list.data.map((e) => html`<tr class="clickable" data-href="#/exams/${e.id}"><td>${e.id}</td><td><a href="#/exams/${e.id}">${e.title}</a></td>
         <td class="muted">${e.description}</td><td class="small">${fmtTime(e.updated_at)}</td></tr>`)}
       ${list.data.length ? '' : html`<tr><td colspan="4" class="muted">Chưa có đề</td></tr>`}
@@ -142,6 +143,7 @@ async function examPage(root, [id]) {
   ]);
   mount(root, html`
     <p><a href="#/exams">← Đề thi</a></p>
+    <div class="page-heading"><div><span class="breadcrumb">Thư viện / Đề #${exam.id}</span><h1>${exam.title}</h1><p>${exam.description || 'Quản lý bài tập và phiên thi.'}</p></div></div>
     <div class="panel">
       <form class="inline" id="exam">
         <label>Tên đề<input name="title" value="${exam.title}" required size="40"></label>
@@ -151,10 +153,10 @@ async function examPage(root, [id]) {
       </form>
     </div>
 
-    <h2>Bài (problem)</h2>
+    <div class="exam-section-heading"><h2>Bài tập</h2><span>${problems.data.length} bài</span><span class="spacer"></span><label class="search-field"><input id="problem-search" type="search" placeholder="Tìm bài tập…" aria-label="Tìm bài tập theo mã hoặc tên"></label></div>
     <div class="panel">
       <table><tr><th>Mã</th><th>Tên</th><th>Giới hạn</th><th>Version</th><th>Test</th><th>Thư mục test trên máy chủ</th><th></th></tr>
-      ${problems.data.map((p) => html`<tr>
+      ${problems.data.map((p) => html`<tr data-problem-row="${p.id}" data-search="${p.code} ${p.title}">
         <td><b>${p.code}</b></td><td>${p.title}</td><td class="small">${p.time_limit_ms} ms · ${p.memory_limit_mb} MB</td>
         <td>v${p.version}</td><td class="small" data-teststate="${p.id}">…</td><td><code class="small">./data/${p.test_dir}</code></td>
         <td class="row"><button data-edit="${p.id}">Sửa</button><button data-tests="${p.id}">Test</button>
@@ -167,7 +169,7 @@ async function examPage(root, [id]) {
         <b>Quét test &amp; chấm lại</b>. Sửa test giữa giờ cũng vậy — mọi bài đã nộp sẽ được chấm lại theo test mới.</p>
     </div>
 
-    <h2>Phiên thi (ca)</h2>
+    <div class="exam-section-heading"><h2>Phiên thi</h2><span>${sessions.data.length} phiên</span></div>
     <div class="panel">
       <table><tr><th>#</th><th>Tên phiên</th><th>Bắt đầu</th><th>Kết thúc</th><th>Trạng thái</th><th></th></tr>
       ${sessions.data.map((s) => html`<tr>
@@ -181,6 +183,10 @@ async function examPage(root, [id]) {
     </div>`);
 
   const reload = () => examPage(root, [id]).catch(showError);
+  $('#problem-search', root).oninput = (e) => {
+    const q = e.target.value.trim().toLocaleLowerCase('vi');
+    for (const row of root.querySelectorAll('[data-problem-row]')) row.hidden = !row.dataset.search.toLocaleLowerCase('vi').includes(q);
+  };
   for (const p of problems.data) {
     get(`/problems/${p.id}/tests`, { pageSize: 200 })
       .then((r) => mount(root.querySelector(`[data-teststate="${p.id}"]`), testState(r)))
@@ -325,6 +331,7 @@ async function sessionPage(root, [id, tab = 'board'], ctx) {
   live.subscribe(Number(id));
   mount(root, html`
     <p><a href="#/exams/${s.exam_id}">← ${s.exam_title}</a></p>
+    <span class="breadcrumb">Điều hành phiên thi</span>
     <div class="row"><h1 style="margin:0">${s.name}</h1>${stateBadge(s.state)}
       <span class="muted small">${fmtTime(s.starts_at)} → ${fmtTime(s.ends_at)}</span><span class="spacer"></span>
       <button id="csv">Xuất CSV</button></div>
@@ -417,7 +424,7 @@ function boardTab(box, id, info, ctx) {
   const draw = (sum) => {
     const ps = sum.problems || [];
     mount(box, html`
-      <div class="row small" style="margin-bottom:8px">
+      <div class="board-status row small">
         <span><span class="dot on"></span>Online: <b>${sum.online_count}</b></span>
         <span>Tham gia: <b>${sum.rows.length}</b></span>
         <span>Hàng đợi: <b>${sum.queue.queued}</b> chờ · <b>${sum.queue.running}</b> đang chấm</span>
@@ -458,6 +465,7 @@ async function submissionsTab(box, id, info, ctx) {
   let studentId = q.get('student') || '', problemId = q.get('problem') || '', page = 1;
   const participants = await get(`/sessions/${id}/participants`, { pageSize: 200 });
   mount(box, html`
+    <div class="section-heading"><h2>Bài nộp của phiên</h2><span class="muted">Kết quả cập nhật trực tiếp</span></div>
     <form class="inline" id="flt">
       <label>Sinh viên<select name="student"><option value="">Tất cả</option>
         ${participants.data.map((p) => html`<option value="${p.student_id}" ${String(p.student_id) === studentId ? raw('selected') : ''}>${p.student_code} — ${p.student_fullname}</option>`)}</select></label>
@@ -498,7 +506,7 @@ async function submissionsTab(box, id, info, ctx) {
 async function participantsTab(box, id, ctx) {
   const load = async () => {
     const list = await get(`/sessions/${id}/participants`, { pageSize: 200 });
-    mount(box, html`<table><tr><th>MSV</th><th>Họ tên</th><th>Trạng thái</th><th>Vào lúc</th><th>Kết thúc lúc</th></tr>
+    mount(box, html`<div class="section-heading"><h2>Người tham gia</h2><span class="muted">${list.data.length} sinh viên · cập nhật mỗi 10 giây</span></div><table><tr><th>MSV</th><th>Họ tên</th><th>Trạng thái</th><th>Vào lúc</th><th>Kết thúc lúc</th></tr>
       ${list.data.map((p) => html`<tr><td>${p.student_code}</td><td>${p.student_fullname}</td>
         <td>${p.status === 'finished' ? html`<span class="badge">Đã kết thúc</span>` : html`<span class="badge ok">Đang làm</span>`}</td>
         <td class="small">${fmtTime(p.joined_at)}</td><td class="small">${fmtTime(p.finished_at)}</td></tr>`)}
@@ -510,6 +518,7 @@ async function participantsTab(box, id, ctx) {
 
 async function announcementsTab(box, id, ctx) {
   mount(box, html`
+    <div class="section-heading"><h2>Thông báo của phiên</h2><span class="muted">Gửi trực tiếp đến sinh viên</span></div>
     <div class="panel"><form class="inline" id="ann">
       <label style="flex:1">Nội dung<input name="text" maxlength="1000" required placeholder="Ví dụ: Còn 10 phút"></label>
       <button class="primary">Gửi tới cả phiên</button></form>
@@ -542,6 +551,7 @@ async function submissionPage(root, [id], ctx) {
     const r = s.result || {};
     mount(root, html`
       <p><a href="#/sessions/${s.session_id}/submissions">← Bài nộp của phiên</a></p>
+      <span class="breadcrumb">Kết quả chấm / ${s.problem_code} / #${s.id}</span>
       <div class="row"><h1 style="margin:0">Bài nộp #${s.id}</h1>${resultBadge(s.result)}<span class="spacer"></span>
         <button id="rj">Chấm lại bài này</button></div>
       <div class="panel" style="margin-top:10px"><dl class="kv">
@@ -559,7 +569,7 @@ async function submissionPage(root, [id], ctx) {
           <table><tr><th>#</th><th>Kết quả</th><th>Thời gian</th><th>Bộ nhớ</th></tr>
           ${tests.data.map((t, i) => html`<tr><td>${i + 1}</td>
             <td><span class="badge ${t.verdict === 'AC' ? 'ok' : 'bad'}">${t.verdict}</span></td>
-            <td>${t.execution_time_ms} ms</td><td>${t.memory_used_kb != null ? `${Math.round(t.memory_used_kb / 1024)} MB` : '—'}</td></tr>`)}
+            <td class="mono">${t.execution_time_ms} ms</td><td class="mono">${t.memory_used_kb != null ? `${(t.memory_used_kb / 1024).toFixed(2)} MB` : '—'}</td></tr>`)}
           ${tests.data.length ? '' : html`<tr><td colspan="4" class="muted">Chưa có kết quả test</td></tr>`}
           </table>
           <p class="muted small">Dừng ở test sai đầu tiên nên chỉ các test đã chạy có dòng.</p></div>
@@ -578,16 +588,8 @@ async function queuePage(root, _, ctx) {
     const q = await get('/admin/queue');
     const j = q.jobs || {};
     mount(root, html`
-      <h1>Hàng đợi chấm</h1>
-      <div class="panel"><dl class="kv">
-        <dt>Đang chờ</dt><dd><b>${j.queued || 0}</b></dd>
-        <dt>Đang chấm</dt><dd><b>${j.running || 0}</b></dd>
-        <dt>Xong / lỗi / bỏ</dt><dd>${j.done || 0} / ${j.failed || 0} / ${j.obsolete || 0}</dd>
-        <dt>Worker đang giữ job</dt><dd>${(q.active_workers || []).join(', ') || '—'}</dd>
-        <dt>Job chờ lâu nhất</dt><dd>${q.oldest_queued_ms} ms</dd>
-        <dt>10 phút gần nhất</dt><dd>${q.recent_runs} lượt · chờ TB ${Math.round(q.avg_queue_wait_ms)} ms · chấm TB ${Math.round(q.avg_judge_ms)} ms</dd>
-        <dt>Cập nhật</dt><dd>${fmtClock(q.generated_at)} (tự làm mới mỗi 3 s)</dd>
-      </dl></div>`);
+      <div class="page-heading"><div><span class="breadcrumb">Hệ thống / Tiến trình chấm</span><h1>Hàng đợi chấm</h1><p>Theo dõi bài đang xử lý và hoạt động của worker.</p></div><span class="badge info">Tự cập nhật · 3 giây</span></div>
+      <div class="queue-layout"><section class="queue-section"><h2>Trạng thái xử lý</h2><div class="queue-meter"><div><span>Đang chờ</span><strong class="queued">${j.queued || 0}</strong></div><div><span>Đang chấm</span><strong class="running">${j.running || 0}</strong></div><div><span>Hoàn tất</span><strong>${j.done || 0}</strong></div></div><dl class="kv"><dt>Worker đang giữ bài</dt><dd class="mono">${(q.active_workers || []).join(', ') || '—'}</dd><dt>Bài chờ lâu nhất</dt><dd class="mono">${q.oldest_queued_ms} ms</dd><dt>Lỗi / đã bỏ</dt><dd class="mono">${j.failed || 0} / ${j.obsolete || 0}</dd></dl></section><section class="queue-section"><h2>10 phút gần nhất</h2><dl class="kv"><dt>Lượt chấm</dt><dd class="mono">${q.recent_runs}</dd><dt>Chờ trung bình</dt><dd class="mono">${Math.round(q.avg_queue_wait_ms)} ms</dd><dt>Chấm trung bình</dt><dd class="mono">${Math.round(q.avg_judge_ms)} ms</dd></dl></section></div><div class="queue-update"><span class="dot on"></span>Cập nhật lúc ${fmtClock(q.generated_at)} · tự làm mới mỗi 3 giây</div>`);
   };
   ctx.every(3000, () => load().catch(() => {}));
   await load();

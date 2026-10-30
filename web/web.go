@@ -1,5 +1,5 @@
-// Package web serves the built-in browser UI (plain HTML/CSS/JS, no build
-// step, no CDN) so the system works on an offline LAN: http://<server>:8080/.
+// Package web serves the built-in browser UI (prebuilt React and local assets,
+// no CDN) so the system works on an offline LAN: http://<server>:8080/.
 package web
 
 import (

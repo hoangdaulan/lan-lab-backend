@@ -5,7 +5,7 @@ const RT_KEY = 'lanjudge.refresh';
 
 export const auth = { access: null, accessExp: 0, user: null };
 const listeners = new Set();
-export function onAuthChange(fn) { listeners.add(fn); }
+export function onAuthChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function emit() { for (const fn of listeners) fn(auth); }
 
 export class ApiError extends Error {

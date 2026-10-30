@@ -30,7 +30,10 @@ export function toast(msg, kind = '') {
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
   t.textContent = msg;
-  document.getElementById('toasts').append(t);
+  const box = document.getElementById('toasts');
+  const limit = window.matchMedia('(max-width: 700px)').matches ? 2 : 3;
+  while (box.children.length >= limit) box.firstElementChild.remove();
+  box.append(t);
   setTimeout(() => t.remove(), kind === 'error' ? 7000 : 4000);
 }
 
@@ -71,19 +74,32 @@ export function showError(e) {
 
 // Run an async action from a button: disable while running, toast errors.
 export async function busy(btn, fn) {
-  if (btn) btn.disabled = true;
-  try { return await fn(); } catch (e) { showError(e); } finally { if (btn) btn.disabled = false; }
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+  try { return await fn(); } catch (e) { showError(e); } finally { if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); } }
 }
 
 export function modal(content) {
+  const previous = document.activeElement;
   const back = document.createElement('div');
   back.className = 'modal-back';
-  back.innerHTML = `<div class="modal">${content}</div>`;
-  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" tabindex="-1"><button class="icon-button modal-close" type="button" aria-label="Đóng hộp thoại">✕</button>${content}</div>`;
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); window.removeEventListener('hashchange', close); if (previous?.isConnected) previous.focus(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const items = [...back.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter((x) => x.getClientRects().length);
+      const first = items[0], last = items.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+  };
   back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
   document.addEventListener('keydown', onKey);
+  window.addEventListener('hashchange', close);
   document.body.append(back);
+  back.querySelector('.modal-close').onclick = close;
+  back.firstElementChild.setAttribute('aria-label', back.querySelector('h1,h2,h3')?.textContent || 'Chi tiết');
+  (back.querySelector('input,textarea,select') || back.querySelector('.modal-close')).focus();
   return { root: back.firstElementChild, close };
 }
 

@@ -13,6 +13,8 @@ data.before-restore-*/
 backups/
 
 # Build outputs, test and coverage files
+node_modules/
+artifacts/
 bin/
 *.test
 coverage.out
