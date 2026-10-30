@@ -73,6 +73,33 @@ type Config struct {
 	// JudgeWorkDir holds per-job scratch directories (compiled binaries,
 	// program output); it must not be under DATA_DIR.
 	JudgeWorkDir string
+
+	// DispatchAddr is where the API accepts judge workers over the TCP
+	// dispatch protocol (":7070"); empty disables it (workers only poll).
+	DispatchAddr string
+
+	// DispatchToken is a shared secret workers send in HELLO; empty accepts
+	// any worker (only safe when the port is not reachable from the LAN).
+	DispatchToken string
+
+	// WorkerDispatchAddr is the dispatcher a worker connects to: host:port,
+	// "auto" to find it by UDP discovery, or empty to only poll.
+	WorkerDispatchAddr string
+
+	// DiscoveryPort is the UDP port for LAN server discovery (broadcast);
+	// 0 disables it.
+	DiscoveryPort int
+
+	// DiscoveryInterval is how often the API broadcasts its announcement.
+	DiscoveryInterval time.Duration
+
+	// AdvertiseHost is the host/IP put in discovery announcements; empty
+	// uses the first TLS_HOSTS entry, else the IP of each interface.
+	AdvertiseHost string
+
+	// AnnounceMulticastAddr is the UDP multicast group teacher
+	// announcements are mirrored to ("239.255.42.99:9998"); empty disables.
+	AnnounceMulticastAddr string
 }
 
 // Load reads every setting; callers validate what their binary needs with
@@ -93,6 +120,14 @@ func Load() (Config, error) {
 	cfg.TLSDir = getenv("TLS_DIR", strings.TrimRight(cfg.DataDir, "/")+"/tls")
 	cfg.TLSHosts = splitList(os.Getenv("TLS_HOSTS"))
 	cfg.WSAllowedOrigins = splitList(os.Getenv("WS_ALLOWED_ORIGINS"))
+	cfg.DispatchAddr = os.Getenv("DISPATCH_ADDR")
+	cfg.DispatchToken = os.Getenv("DISPATCH_TOKEN")
+	cfg.WorkerDispatchAddr = os.Getenv("WORKER_DISPATCH_ADDR")
+	cfg.AdvertiseHost = os.Getenv("ADVERTISE_HOST")
+	if cfg.AdvertiseHost == "" && len(cfg.TLSHosts) > 0 {
+		cfg.AdvertiseHost = cfg.TLSHosts[0]
+	}
+	cfg.AnnounceMulticastAddr = os.Getenv("ANNOUNCE_MULTICAST_ADDR")
 
 	var err error
 	if cfg.WorkerConcurrency, err = getenvInt("WORKER_CONCURRENCY", 2); err != nil {
@@ -109,6 +144,18 @@ func Load() (Config, error) {
 	}
 	if cfg.WorkerLease < 3*time.Second {
 		return Config{}, errors.New("WORKER_LEASE must be at least 3s")
+	}
+	if cfg.DiscoveryPort, err = getenvInt("DISCOVERY_PORT", 0); err != nil {
+		return Config{}, err
+	}
+	if cfg.DiscoveryPort < 0 || cfg.DiscoveryPort > 65535 {
+		return Config{}, errors.New("DISCOVERY_PORT must be 0-65535")
+	}
+	if cfg.DiscoveryInterval, err = getenvDuration("DISCOVERY_INTERVAL", 5*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.DiscoveryInterval < 500*time.Millisecond {
+		return Config{}, errors.New("DISCOVERY_INTERVAL must be at least 500ms")
 	}
 	if cfg.AccessTokenTTL, err = getenvDuration("ACCESS_TOKEN_TTL", 15*time.Minute); err != nil {
 		return Config{}, err

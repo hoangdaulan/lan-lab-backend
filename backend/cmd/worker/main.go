@@ -18,6 +18,8 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/cppjudge"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
+	"github.com/hoangdaulan/lan-lab-backend/internal/discovery"
+	"github.com/hoangdaulan/lan-lab-backend/internal/dispatch"
 	"github.com/hoangdaulan/lan-lab-backend/internal/judge"
 	"github.com/hoangdaulan/lan-lab-backend/internal/sandbox"
 )
@@ -63,8 +65,28 @@ func run(log *slog.Logger) error {
 	if cfg.WorkerListen && svc.Enabled() {
 		go w.ListenForWork(ctx, cfg.DatabaseURL, log)
 	}
-	log.Info("job pickup", "listen", cfg.WorkerListen, "poll_interval", cfg.WorkerPollInterval)
-	return w.Run(ctx)
+	clientDone := make(chan struct{})
+	if cfg.WorkerDispatchAddr != "" && svc.Enabled() {
+		// Receive jobs pushed over TCP (docs/net-protocols.md §1); polling
+		// pauses while connected and resumes when the link drops.
+		c := dispatch.NewClient(cfg.WorkerDispatchAddr, w, log)
+		c.Token = cfg.DispatchToken
+		if cfg.WorkerDispatchAddr == "auto" {
+			port := cfg.DiscoveryPort
+			if port == 0 {
+				port = discovery.DefaultPort
+			}
+			c.Resolve = func(ctx context.Context) (string, error) { return discovery.FindDispatcher(ctx, port) }
+		}
+		go func() { defer close(clientDone); c.Run(ctx) }()
+	} else {
+		close(clientDone)
+	}
+	log.Info("job pickup", "listen", cfg.WorkerListen, "poll_interval", cfg.WorkerPollInterval,
+		"dispatch", cfg.WorkerDispatchAddr)
+	err = w.Run(ctx)
+	<-clientDone // pushed jobs still being judged
+	return err
 }
 
 // newJudger returns the C++ judger, or DisabledJudger when the process

@@ -15,6 +15,13 @@ import (
 // waiting for the poll interval. It reconnects on errors; while
 // disconnected the worker still polls.
 func (w *Worker) ListenForWork(ctx context.Context, databaseURL string, log *slog.Logger) {
+	ListenEvents(ctx, databaseURL, w.Wake, log)
+}
+
+// ListenEvents calls onEvent for every notification on the judge events
+// channel, reconnecting with backoff until ctx ends. Callers must keep a
+// polling fallback for the time it is disconnected.
+func ListenEvents(ctx context.Context, databaseURL string, onEvent func(), log *slog.Logger) {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		err := func() error {
@@ -31,7 +38,7 @@ func (w *Worker) ListenForWork(ctx context.Context, databaseURL string, log *slo
 				if _, err := conn.WaitForNotification(ctx); err != nil {
 					return err
 				}
-				w.Wake()
+				onEvent()
 			}
 		}()
 		if ctx.Err() != nil {

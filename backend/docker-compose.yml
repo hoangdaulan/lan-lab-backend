@@ -42,6 +42,17 @@ services:
       TLS_HOSTS: ${TLS_HOSTS:-}
       DATA_DIR: /data
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
+      # Judge workers connect here (TCP dispatch protocol,
+      # docs/net-protocols.md §1). Not published: the worker reaches it as
+      # api:7070 on the db network.
+      DISPATCH_ADDR: ":7070"
+      DISPATCH_TOKEN: ${DISPATCH_TOKEN:-}
+      # UDP discovery / multicast announcements (docs/net-protocols.md
+      # §2-3). Broadcast and multicast do not cross Docker's NAT bridge:
+      # use docker-compose.lan.yml (host networking) to reach the LAN.
+      DISCOVERY_PORT: ${DISCOVERY_PORT:-0}
+      ADVERTISE_HOST: ${ADVERTISE_HOST:-}
+      ANNOUNCE_MULTICAST_ADDR: ${ANNOUNCE_MULTICAST_ADDR:-}
     # Runs as the owner of ./data so files the teacher edits on the host stay
     # readable/writable by the containers.
     user: "${APP_UID:-10001}:${APP_GID:-10001}"
@@ -71,6 +82,10 @@ services:
       WORKER_LISTEN: ${WORKER_LISTEN:-true}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
       WORKER_LEASE: ${WORKER_LEASE:-60s}
+      # Jobs are pushed over TCP by the API; empty = polling only. While
+      # the connection is down the worker polls the database as before.
+      WORKER_DISPATCH_ADDR: ${WORKER_DISPATCH_ADDR:-api:7070}
+      DISPATCH_TOKEN: ${DISPATCH_TOKEN:-}
     # Root inside the container with only the capabilities the sandbox needs
     # (BACKEND_CONTEXT.md §19): SYS_ADMIN for a new network namespace per
     # program, SETUID/SETGID to run it as runner uid 20000+slot, CHOWN/FOWNER

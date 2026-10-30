@@ -156,10 +156,16 @@ Mạng Docker: `web` (API publish `0.0.0.0:8080` ra LAN) và `db` (internal — 
 ```text
 Trình duyệt ──HTTP/1.1 REST (JSON)──────────► API ──SQL──► PostgreSQL ◄──SQL── Worker
 Trình duyệt ◄═WebSocket (JSON {type,data})══► API ◄─NOTIFY─ PostgreSQL ─NOTIFY─► Worker
+                                              API ══TCP khung tự thiết kế (:7070)══► Worker
+Máy trong LAN ◄─UDP broadcast (:9999)─ API ─UDP multicast 239.255.42.99:9998─► Máy trong LAN
 ```
 
 * Client ↔ API: HTTP/1.1 trên TCP cổng 8080 (REST), nâng cấp lên WebSocket tại `/api/v1/ws`.
 * API/Worker ↔ PostgreSQL: giao thức PostgreSQL trên TCP (pool `pgx`), một kết nối riêng giữ `LISTEN judge_events` ở mỗi tiến trình.
+* API → Worker: **giao thức TCP tự thiết kế** (khung 4 byte độ dài + 1 byte loại + JSON; HELLO/JOB/ACK/RESULT/PING) để đẩy job cho worker; mất kết nối thì worker quay lại polling DB.
+* API ↔ máy trong LAN: **UDP broadcast** để tìm máy chủ không cần biết IP, **UDP multicast** để phát thông báo của GV tới cả phòng bằng một gói.
+
+Đặc tả đầy đủ ba giao thức socket tự viết (khung, loại message, trình tự, xử lý lỗi): [`docs/net-protocols.md`](docs/net-protocols.md).
 
 ## 5.2. Protocol
 
@@ -222,6 +228,7 @@ sequenceDiagram
 * **Timeout**: wall-clock khi chạy bài; auth WebSocket 5 s; lease 60 s cho job; ghi WebSocket 5 s.
 * **Client disconnect**: ping/pong; nối lại + REST; client chậm bị ngắt thay vì làm nghẽn server.
 * **Server unavailable / restart**: job đang chấm được phục hồi khi lease hết hạn; worker mất `LISTEN` vẫn polling; API mất `LISTEN` tự nối lại và gửi `resync`.
+* **Mất kết nối TCP API ↔ worker**: PING/PONG 5 s, 3 lần im lặng là đóng; job chưa ACK trả về hàng đợi; job đã ACK được worker chấm tiếp và tự ghi kết quả vào DB; worker polling cho tới khi nối lại (backoff 1 → 15 s).
 * **Database error**: nhận bài chỉ trả 202 sau COMMIT; file của transaction lỗi được dọn sau 1 giờ; lỗi hạ tầng khi chấm retry 3 lần (5 s / 30 s / 2 phút) rồi `system_error`, không bao giờ thành WA/RE.
 
 ---
@@ -285,6 +292,7 @@ backend/
 │   ├── migrate/    chạy migration goose
 │   ├── seed/       tạo giáo viên đầu tiên
 │   ├── wsprobe/    client WebSocket để demo/kiểm tra
+│   ├── lannet/     client UDP: tìm máy chủ (broadcast), nghe thông báo (multicast)
 │   └── loadtest/   giả lập cả lớp để đo tải
 ├── internal/
 │   ├── auth, student, exam, problem, submission, board   (handler → service → repository)
@@ -293,10 +301,15 @@ backend/
 │   ├── sandbox/    setrlimit + uid + network namespace
 │   ├── realtime/   hub WebSocket, listener LISTEN/NOTIFY
 │   ├── events/     pg_notify trong transaction
+│   ├── wire/       khung TCP (độ dài + loại + JSON)
+│   ├── dispatch/   dispatcher TCP (API) và client (worker)
+│   ├── discovery/  UDP broadcast tìm máy chủ
+│   ├── mcast/      UDP multicast thông báo
 │   └── config, db, httpx, apperr, testdb
 ├── migrations/00001_init.sql  ← schema (bản thiết kế: database/schema-design.sql)
 ├── docs/
 │   ├── api-v1.md              ← API + protocol WebSocket
+│   ├── net-protocols.md       ← giao thức TCP/UDP tự thiết kế
 │   ├── swagger.json/.yaml     ← Swagger (UI tại /swagger)
 │   ├── IMPLEMENTATION_PLAN.md ← kế hoạch + checklist đã kiểm chứng
 │   ├── DEMO.md, REPORT_NOTES.md
@@ -368,6 +381,12 @@ Sửa `.env`:
 | `API_HTTPS_PORT`, `TLS_HOSTS` | cổng HTTPS cho trình duyệt (8443) và IP LAN của máy chủ cho chứng chỉ, vd. `TLS_HOSTS=192.168.1.9` |
 | `WORKER_CONCURRENCY` | số bài chấm song song mỗi worker (mặc định 2; thực nghiệm: 4–8 trên 12 luồng) |
 | `WS_ALLOWED_ORIGINS` | thêm Origin cho frontend chạy ở cổng khác (vd. `localhost:5173`) |
+| `DISPATCH_TOKEN` | bí mật dùng chung giữa API và worker cho giao thức TCP đẩy job (`openssl rand -hex 16`) |
+| `WORKER_DISPATCH_ADDR` | worker nhận job qua TCP từ đâu: `api:7070` (mặc định), `auto` (tìm bằng UDP), rỗng = chỉ polling |
+| `DISCOVERY_PORT`, `ADVERTISE_HOST` | UDP broadcast tìm máy chủ (`0` = tắt) và IP quảng bá |
+| `ANNOUNCE_MULTICAST_ADDR` | nhóm multicast cho thông báo GV, vd. `239.255.42.99:9998` (rỗng = tắt) |
+
+Broadcast/multicast không đi qua bridge NAT của Docker: để dùng với các máy thật trong LAN chạy `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build` (chi tiết `docs/net-protocols.md` §4).
 
 Mở cổng cho LAN nếu dùng tường lửa: `sudo ufw allow 8080/tcp && sudo ufw allow 8443/tcp`.
 
@@ -408,6 +427,13 @@ Frontend chính thức (nếu có) nằm ở repo riêng. Công cụ khác để
 
 ```bash
 go run ./cmd/wsprobe -base http://<IP>:8080 -code B21DCCN001 -password '<mật khẩu>' -session 3 -duration 10m
+```
+
+* Tìm máy chủ và nghe thông báo qua UDP (không cần biết IP):
+
+```bash
+go run ./cmd/lannet discover        # broadcast thăm dò, in http/https/dispatch của máy chủ
+go run ./cmd/lannet announcements   # tham gia nhóm multicast, in thông báo của GV
 ```
 
 ## 11.3. Start Multiple Clients

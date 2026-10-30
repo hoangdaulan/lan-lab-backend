@@ -19,8 +19,12 @@ import (
 	"github.com/hoangdaulan/lan-lab-backend/internal/board"
 	"github.com/hoangdaulan/lan-lab-backend/internal/config"
 	"github.com/hoangdaulan/lan-lab-backend/internal/db"
+	"github.com/hoangdaulan/lan-lab-backend/internal/discovery"
+	"github.com/hoangdaulan/lan-lab-backend/internal/dispatch"
 	"github.com/hoangdaulan/lan-lab-backend/internal/exam"
 	"github.com/hoangdaulan/lan-lab-backend/internal/httpx"
+	"github.com/hoangdaulan/lan-lab-backend/internal/judge"
+	"github.com/hoangdaulan/lan-lab-backend/internal/mcast"
 	"github.com/hoangdaulan/lan-lab-backend/internal/problem"
 	"github.com/hoangdaulan/lan-lab-backend/internal/realtime"
 	"github.com/hoangdaulan/lan-lab-backend/internal/student"
@@ -72,11 +76,60 @@ func run(log *slog.Logger) error {
 	// (BACKEND_CONTEXT.md §19, phase 11).
 	boardSvc := board.NewService(board.NewRepository(pool), board.NewAnnouncements())
 	hub := realtime.NewHub(realtime.Sources{Submissions: submissionRepo, Board: boardSvc}, log)
-	boardSvc.SetBroadcaster(hub)
+	serverName, _ := os.Hostname()
+	var bcast board.Broadcaster = hub
+	if cfg.AnnounceMulticastAddr != "" {
+		// Announcements also go to a UDP multicast group (docs/net-protocols.md §3).
+		mc, err := mcast.NewSender(cfg.AnnounceMulticastAddr, serverName)
+		if err != nil {
+			return fmt.Errorf("ANNOUNCE_MULTICAST_ADDR: %w", err)
+		}
+		defer mc.Close()
+		bcast = multicastMirror{Broadcaster: hub, mc: mc, log: log}
+		log.Info("announcements mirrored to multicast", "group", cfg.AnnounceMulticastAddr)
+	}
+	boardSvc.SetBroadcaster(bcast)
 	boardHandler := board.NewHandler(boardSvc, log)
 	wsHandler := realtime.NewHandler(hub, authSvc, cfg.WSAllowedOrigins, log)
 	go realtime.NewListener(cfg.DatabaseURL, hub, log).Run(ctx)
 	go hub.RunSummaries(ctx)
+
+	if cfg.DispatchAddr != "" {
+		// Push jobs to workers over TCP (docs/net-protocols.md §1); workers
+		// that are not connected keep polling the same queue.
+		ln, err := net.Listen("tcp", cfg.DispatchAddr)
+		if err != nil {
+			return fmt.Errorf("DISPATCH_ADDR: %w", err)
+		}
+		d := dispatch.NewServer(judge.NewRepository(pool), dispatch.ServerConfig{
+			Name: serverName, Token: cfg.DispatchToken, Lease: cfg.WorkerLease,
+			Retry: judge.DefaultRetry, PollInterval: cfg.WorkerPollInterval,
+		}, log)
+		if cfg.DispatchToken == "" {
+			log.Warn("DISPATCH_TOKEN is empty: any host that reaches the dispatch port can act as a worker")
+		}
+		go func() {
+			if err := d.Serve(ctx, ln); err != nil {
+				log.Error("dispatcher stopped", "err", err)
+			}
+		}()
+		go d.Run(ctx)
+		go judge.ListenEvents(ctx, cfg.DatabaseURL, d.Wake, log)
+	}
+	if cfg.DiscoveryPort != 0 {
+		// LAN discovery over UDP broadcast (docs/net-protocols.md §2).
+		svc := discovery.Service{Name: serverName, Host: cfg.AdvertiseHost, HTTPPort: portOf(cfg.HTTPAddr),
+			DispatchPort: portOf(cfg.DispatchAddr), Multicast: cfg.AnnounceMulticastAddr}
+		if cfg.HTTPSAddr != "" {
+			svc.HTTPSPort = cfg.HTTPSPublicPort
+		}
+		a := &discovery.Announcer{Service: svc, Port: cfg.DiscoveryPort, Interval: cfg.DiscoveryInterval, Log: log}
+		go func() {
+			if err := a.Run(ctx); err != nil {
+				log.Error("discovery stopped", "err", err)
+			}
+		}()
+	}
 
 	router := httpx.NewRouter(pool)
 	router.Route("/api/v1", func(r chi.Router) {
@@ -187,4 +240,31 @@ func isLocalHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// multicastMirror sends each announcement to the WebSocket hub and, best
+// effort, to the multicast group.
+type multicastMirror struct {
+	board.Broadcaster
+	mc  *mcast.Sender
+	log *slog.Logger
+}
+
+func (m multicastMirror) Announce(a board.Announcement) {
+	m.Broadcaster.Announce(a)
+	if err := m.mc.Send(a.ID, a.SessionID, a.Text, a.CreatedAt); err != nil {
+		m.log.Warn("multicast announcement", "err", err)
+	}
+}
+
+// portOf returns the port of a listen address (":8080" → "8080"), or "".
+func portOf(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	return port
 }

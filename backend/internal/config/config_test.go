@@ -10,7 +10,9 @@ import (
 func setEnv(t *testing.T, kv map[string]string) {
 	t.Helper()
 	for _, k := range []string{"DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "DATA_DIR", "WORKER_ID",
-		"WORKER_CONCURRENCY", "WORKER_POLL_INTERVAL", "WORKER_LEASE", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL"} {
+		"WORKER_CONCURRENCY", "WORKER_POLL_INTERVAL", "WORKER_LEASE", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL",
+		"TLS_HOSTS", "DISPATCH_ADDR", "DISPATCH_TOKEN", "WORKER_DISPATCH_ADDR", "DISCOVERY_PORT",
+		"DISCOVERY_INTERVAL", "ADVERTISE_HOST", "ANNOUNCE_MULTICAST_ADDR"} {
 		t.Setenv(k, "")
 	}
 	for k, v := range kv {
@@ -36,6 +38,35 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if err := cfg.RequireWorker(); err != nil {
 		t.Errorf("RequireWorker: %v", err)
+	}
+}
+
+func TestLoadSocketFeatures(t *testing.T) {
+	setEnv(t, map[string]string{"DATABASE_URL": "postgres://x"})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Off by default: nothing changes for an existing deployment.
+	if cfg.DispatchAddr != "" || cfg.WorkerDispatchAddr != "" || cfg.DiscoveryPort != 0 ||
+		cfg.AnnounceMulticastAddr != "" || cfg.DiscoveryInterval != 5*time.Second {
+		t.Errorf("defaults = %+v", cfg)
+	}
+
+	setEnv(t, map[string]string{"DATABASE_URL": "postgres://x", "DISPATCH_ADDR": ":7070",
+		"DISCOVERY_PORT": "9999", "TLS_HOSTS": "192.168.1.9, lab.local"})
+	if cfg, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DispatchAddr != ":7070" || cfg.DiscoveryPort != 9999 || cfg.AdvertiseHost != "192.168.1.9" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+
+	for _, kv := range []map[string]string{{"DISCOVERY_PORT": "70000"}, {"DISCOVERY_INTERVAL": "10ms"}} {
+		setEnv(t, kv)
+		if _, err := Load(); err == nil {
+			t.Errorf("%v accepted", kv)
+		}
 	}
 }
 
