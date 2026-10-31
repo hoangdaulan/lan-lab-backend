@@ -35,8 +35,6 @@ function dispatch(type, data) {
   }
 }
 
-export function isConnected() { return connected; }
-
 // subscribe(id) opens the socket if needed and follows that session.
 export function subscribe(id) {
   if (wanted && sessionId === id && ws) return;

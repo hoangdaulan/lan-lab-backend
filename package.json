@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build-ui.mjs",
-    "dev": "node scripts/dev-ui.mjs",
-    "preview:ui": "node scripts/ui-e2e/preview.mjs",
-    "test:ui": "node scripts/ui-e2e/redesign.mjs"
+    "build": "node backend/scripts/build-ui.mjs",
+    "dev": "node backend/scripts/dev-ui.mjs",
+    "preview:ui": "node backend/scripts/ui-e2e/preview.mjs",
+    "test:ui": "node backend/scripts/ui-e2e/redesign.mjs"
   },
   "dependencies": {
     "react": "18.3.1",

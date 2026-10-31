@@ -1,7 +1,9 @@
 import { build, context } from "esbuild";
+import { fileURLToPath } from "node:url";
 export const options = {
+  absWorkingDir: fileURLToPath(new URL("../../", import.meta.url)),
   entryPoints: ["web/src/app.jsx"],
-  outfile: "web/static/app.js",
+  outfile: "backend/web/static/app.js",
   bundle: true,
   format: "esm",
   target: ["es2022"],
@@ -27,6 +29,6 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
     console.log("Watching React sources.");
   } else {
     await build(options);
-    console.log("Built web/static/app.js — local assets, no CDN.");
+    console.log("Built backend/web/static/app.js — local assets, no CDN.");
   }
 }

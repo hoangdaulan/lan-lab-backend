@@ -19,7 +19,6 @@ function render(v) {
 }
 
 export const $ = (sel, root = document) => root.querySelector(sel);
-export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export function mount(node, content) {
   node.innerHTML = Array.isArray(content) ? content.map(String).join('') : String(content);

@@ -3,9 +3,10 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, extname } from "node:path";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 const stamp = () => new Date().toISOString();
 const at = (minutes) => new Date(Date.now() + minutes * 60000).toISOString();
-const staticDir = resolve("web/static");
+const staticDir = fileURLToPath(new URL("../../web/static", import.meta.url));
 const student = {
   id: 2,
   code: "SV001",

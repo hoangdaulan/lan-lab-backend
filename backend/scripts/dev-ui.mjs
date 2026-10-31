@@ -5,7 +5,8 @@ import { createServer, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { readFile } from "node:fs/promises";
 import { resolve, extname } from "node:path";
-const root = resolve("web/static"),
+import { fileURLToPath } from "node:url";
+const root = fileURLToPath(new URL("../web/static", import.meta.url)),
   upstream = new URL(process.env.BACKEND_URL || "http://127.0.0.1:8080");
 const forward = upstream.protocol === "https:" ? httpsRequest : httpRequest;
 const ctx = await context(options);

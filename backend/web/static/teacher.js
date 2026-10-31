@@ -4,7 +4,7 @@ import { get, post, put, del, upload, request } from './api.js';
 import * as live from './live.js';
 import * as screen from './screen.js';
 import {
-  html, raw, mount, $, $$, busy, toast, modal, showError, errText, fmtTime, fmtClock,
+  html, raw, mount, $, busy, toast, modal, showError, errText, fmtTime, fmtClock,
   toLocalInput, fromLocalInput, stateBadge, resultBadge, resultText, pager, formData, downloadBlob,
 } from './ui.js';
 
