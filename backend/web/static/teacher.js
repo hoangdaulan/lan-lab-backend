@@ -355,27 +355,55 @@ async function sessionPage(root, [id, tab = 'board'], ctx) {
   if (tab === 'screens') return screensTab(box, id, ctx);
 }
 
+// Grid sizes of the "Màn hình SV" tab and the encoder cap asked of each
+// student for that size: decoding 15 full-resolution screens is the heavy
+// part on the teacher's machine, so bigger grids get fewer frames (and
+// bits) per screen while the resolution stays full for readable code.
+const SCREEN_GRIDS = { 1: { fps: 15, bitrate: 2_500_000 }, 4: { fps: 10, bitrate: 1_500_000 }, 9: { fps: 5, bitrate: 1_000_000 }, 15: { fps: 3, bitrate: 800_000 } };
+const GRID_KEY = 'lanjudge.screenGrid';
+
 // Students working in the session with their screen-sharing state; click to
-// watch a screen live (WebRTC peer to peer, see screen.js).
+// watch a screen live (WebRTC peer to peer, see screen.js), up to the grid
+// size at once.
 async function screensTab(box, id, ctx) {
+  let grid = 4;
+  try { grid = SCREEN_GRIDS[localStorage.getItem(GRID_KEY)] ? Number(localStorage.getItem(GRID_KEY)) : 4; } catch {}
   mount(box, html`
     <div class="row small" style="margin-bottom:8px"><span id="scr-sum" class="muted"></span></div>
     <table><tr><th>MSV</th><th>Họ tên</th><th>Bài làm</th><th>Màn hình</th><th></th></tr><tbody id="scr-rows"></tbody></table>
-    <p class="muted small">Sinh viên phải chia sẻ toàn màn hình mới làm bài được. Video đi thẳng từ máy sinh viên tới máy này trong LAN; xem tối đa 4 màn hình cùng lúc.</p>
+    <p class="muted small">Sinh viên phải chia sẻ toàn màn hình mới làm bài được. Video đi thẳng từ máy sinh viên tới máy này trong LAN.
+      Lưới càng nhiều ô thì mỗi màn hình càng ít khung hình/giây (độ phân giải giữ nguyên); nhấp đúp một ô để phóng to ở 15 khung/giây.</p>
+    <div class="row screens-bar">
+      <span class="small muted">Lưới</span>
+      <div class="filter-tabs" id="scr-grid" aria-label="Số màn hình xem cùng lúc">
+        ${Object.keys(SCREEN_GRIDS).map((n) => html`<button data-grid="${n}" title="${SCREEN_GRIDS[n].fps} khung/giây mỗi màn hình">${n}</button>`)}
+      </div>
+      <span class="small muted" id="scr-cap"></span>
+      <span class="spacer"></span>
+      <button id="scr-all">Xem tất cả</button>
+      <button id="scr-none">Đóng tất cả</button>
+    </div>
     <div class="screens" id="scr-tiles"></div>`);
   let participants = [];
   let online = new Map(); // student_id -> sharing
-  const tiles = new Map(); // student_id -> {el, stop}
+  const tiles = new Map(); // student_id -> {el, view}, in opening order
+  let zoomed = null; // student_id shown full screen
 
+  const quality = (sid) => SCREEN_GRIDS[sid === zoomed ? 1 : grid];
   const draw = () => {
     const rows = participants.map((p) => ({ ...p, conn: online.has(p.student_id), sharing: online.get(p.student_id) === true }));
     const sharing = rows.filter((r) => r.sharing).length;
     $('#scr-sum').textContent = `${sharing} đang chia sẻ · ${rows.filter((r) => r.conn).length} đang mở trang · ${rows.length} đã tham gia`;
+    $('#scr-cap').textContent = `${tiles.size}/${grid} ô · ${SCREEN_GRIDS[grid].fps} khung/giây`;
+    for (const b of box.querySelectorAll('[data-grid]')) b.classList.toggle('active', Number(b.dataset.grid) === grid);
+    $('#scr-tiles').dataset.grid = grid;
+    const full = tiles.size >= grid;
     mount($('#scr-rows'), rows.map((r) => html`<tr>
       <td><span class="dot ${r.conn ? 'on' : ''}"></span>${r.student_code}</td><td>${r.student_fullname}</td>
       <td class="small">${r.status === 'finished' ? 'Đã kết thúc' : 'Đang làm'}</td>
       <td>${r.sharing ? html`<span class="badge ok">Đang chia sẻ</span>` : r.conn ? html`<span class="badge bad">Chưa/đã tắt chia sẻ</span>` : html`<span class="badge">Offline</span>`}</td>
-      <td>${r.sharing ? html`<button data-watch="${r.student_id}" ${tiles.has(r.student_id) ? raw('disabled') : ''}>Xem màn hình</button>` : ''}</td></tr>`));
+      <td>${tiles.has(r.student_id) ? html`<button data-unwatch="${r.student_id}">Đóng</button>`
+        : r.sharing ? html`<button data-watch="${r.student_id}" ${full ? raw('disabled title="Lưới đã đầy: đóng bớt hoặc chọn lưới lớn hơn"') : ''}>Xem màn hình</button>` : ''}</td></tr>`));
     if (!rows.length) mount($('#scr-rows'), html`<tr><td colspan="5" class="muted">Chưa có sinh viên tham gia</td></tr>`);
   };
   const name = (sid) => { const p = participants.find((x) => x.student_id === sid); return p ? `${p.student_code} — ${p.student_fullname}` : `SV #${sid}`; };
@@ -384,32 +412,62 @@ async function screensTab(box, id, ctx) {
     const t = tiles.get(sid);
     if (!t) return;
     tiles.delete(sid);
-    t.stop();
+    t.view.stop();
     t.el.remove();
     draw();
   };
   const openTile = (sid) => {
-    if (tiles.has(sid)) return;
+    if (tiles.has(sid) || tiles.size >= grid) return;
     const el = document.createElement('div');
     el.className = 'screen-tile';
-    mount(el, html`<div class="row"><b>${name(sid)}</b><span class="spacer"></span><span class="small" data-st>Đang kết nối…</span>
-      <button data-close>Đóng</button></div><video autoplay playsinline muted></video>`);
+    mount(el, html`<div class="row"><b title="${name(sid)}">${name(sid)}</b><span class="spacer"></span><span class="small" data-st>Đang kết nối…</span>
+      <button data-close title="Đóng">×</button></div><video autoplay playsinline muted></video>`);
     $('#scr-tiles').append(el);
     const video = el.querySelector('video'), st = el.querySelector('[data-st]');
     el.querySelector('[data-close]').onclick = () => closeTile(sid);
     video.ondblclick = () => video.requestFullscreen && video.requestFullscreen();
-    const stop = screen.watch(sid, {
-      onTrack: (ms) => { video.srcObject = ms; st.textContent = 'Trực tiếp (nhấp đúp để phóng to)'; },
+    const view = screen.watch(sid, {
+      quality: quality(sid),
+      onTrack: (ms) => { video.srcObject = ms; st.textContent = 'Trực tiếp'; },
       onEnd: () => { st.textContent = 'Đã dừng'; setTimeout(() => closeTile(sid), 1500); },
       onError: (msg) => { toast(`${name(sid)}: ${errText({ message: msg })}`, 'error'); closeTile(sid); },
     });
-    tiles.set(sid, { el, stop });
+    tiles.set(sid, { el, view, video });
+    draw();
+  };
+  const setGrid = (n) => {
+    grid = n;
+    try { localStorage.setItem(GRID_KEY, String(n)); } catch {}
+    const extra = [...tiles.keys()].slice(n);
+    for (const sid of extra) closeTile(sid);
+    if (extra.length) toast(`Đã đóng ${extra.length} màn hình mở sau cùng cho vừa lưới ${n}`);
+    for (const [sid, t] of tiles) t.view.setQuality(quality(sid));
     draw();
   };
 
+  // A full-screen tile gets the single-screen frame rate until it leaves.
+  const onFullscreen = () => {
+    const el = document.fullscreenElement;
+    const prev = zoomed;
+    zoomed = null;
+    for (const [sid, t] of tiles) if (t.video === el) zoomed = sid;
+    for (const sid of new Set([prev, zoomed])) if (sid != null && tiles.has(sid)) tiles.get(sid).view.setQuality(quality(sid));
+  };
+  document.addEventListener('fullscreenchange', onFullscreen);
+
   box.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-watch]');
-    if (b) openTile(Number(b.dataset.watch));
+    const b = e.target.closest('[data-watch], [data-unwatch], [data-grid], #scr-all, #scr-none');
+    if (!b) return;
+    if (b.dataset.watch) openTile(Number(b.dataset.watch));
+    else if (b.dataset.unwatch) closeTile(Number(b.dataset.unwatch));
+    else if (b.dataset.grid) setGrid(Number(b.dataset.grid));
+    else if (b.id === 'scr-none') for (const sid of [...tiles.keys()]) closeTile(sid);
+    else {
+      const ready = participants.filter((p) => online.get(p.student_id) === true && !tiles.has(p.student_id));
+      for (const p of ready) openTile(p.student_id);
+      if (!ready.length) toast('Không còn sinh viên nào đang chia sẻ để mở');
+      else if (tiles.size >= grid && ready.some((p) => !tiles.has(p.student_id))) toast(`Lưới ${grid} đã đầy; chọn lưới lớn hơn để xem thêm`);
+    }
   });
   ctx.on('screen.list', (d) => {
     if (String(d.session_id) !== String(id)) return;
@@ -420,7 +478,10 @@ async function screensTab(box, id, ctx) {
   const loadParticipants = async () => { participants = (await get(`/sessions/${id}/participants`, { pageSize: 200 })).data; draw(); };
   ctx.on('resync', () => loadParticipants().catch(() => {}));
   ctx.every(15_000, () => loadParticipants().catch(() => {}));
-  ctx.onCleanup(() => { for (const sid of [...tiles.keys()]) closeTile(sid); });
+  ctx.onCleanup(() => {
+    document.removeEventListener('fullscreenchange', onFullscreen);
+    for (const sid of [...tiles.keys()]) closeTile(sid);
+  });
   await loadParticipants();
   // Ask for the current list (the page may have subscribed before this tab).
   live.send('subscribe', { session_id: Number(id) });

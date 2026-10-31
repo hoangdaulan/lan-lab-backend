@@ -395,8 +395,9 @@ Client → server (thêm):
 | type | data | Ai gửi / kiểm tra |
 |---|---|---|
 | `screen.state` | `{sharing: bool}` | SV đã subscribe phiên; gửi lại sau mỗi `subscribed` (server quên khi nối lại/đổi phiên) |
-| `screen.view` | `{student_id}` | GV đã subscribe phiên của mình; SV phải đang chia sẻ trong **cùng phiên**; tối đa 4 view/kết nối GV |
+| `screen.view` | `{student_id}` | GV đã subscribe phiên của mình; SV phải đang chia sẻ trong **cùng phiên**; tối đa 15 view/kết nối GV (lưới 5×3) |
 | `webrtc.signal` | `{view_id, kind: "offer"\|"answer"\|"ice", payload}` | chỉ hai kết nối của view; server chuyển nguyên văn cho đầu kia |
+| `webrtc.signal` | `{view_id, kind: "quality", payload: {fps, bitrate}}` | chỉ GV của view; SV giới hạn fps (khung/giây) và bitrate (bit/s) bộ mã hóa cho view đó, giữ nguyên độ phân giải |
 | `screen.stop` | `{view_id}` | một trong hai đầu |
 
 Luồng: GV `screen.view` → server tạo `view_id`, gửi `screen.view` cho kết nối SV đang chia sẻ (tab mới nhất) và `screen.view.started` cho GV → SV tạo `RTCPeerConnection`, gắn track màn hình, gửi `offer` → GV trả `answer` → hai bên trao `ice` → video chạy. View kết thúc (`screen.stop` cho cả hai) khi một bên gửi `screen.stop`, SV tắt chia sẻ, một bên mất kết nối hoặc đổi phiên.

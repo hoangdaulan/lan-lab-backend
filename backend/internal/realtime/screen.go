@@ -17,6 +17,8 @@ import (
 //	student → server  screen.state   {"sharing": bool}
 //	teacher → server  screen.view    {"student_id"}         start watching
 //	either  → server  webrtc.signal  {"view_id", "kind": "offer"|"answer"|"ice", "payload"}
+//	teacher → server  webrtc.signal  {"view_id", "kind": "quality", "payload": {"fps", "bitrate"}}
+//	                                 cap the student's encoder for this view
 //	either  → server  screen.stop    {"view_id"}
 //	server → teacher  screen.list    {"session_id", "students": [{"student_id", "sharing"}]}
 //	server → student  screen.view    {"view_id", "teacher_id"}  create an offer for this viewer
@@ -63,7 +65,8 @@ var (
 	errNoView        = errors.New("unknown view")
 )
 
-const maxViewsPerTeacher = 4
+// maxViewsPerTeacher matches the largest grid of the teacher UI (5×3).
+const maxViewsPerTeacher = 15
 
 // setScreen records a student connection's sharing state; turning sharing
 // off ends every view of that connection.
@@ -132,9 +135,9 @@ func (h *Hub) startView(t *Client, studentID int64) (int64, error) {
 // the view; only the two connections of the view may use it.
 func (h *Hub) relaySignal(from *Client, d signalData) error {
 	switch d.Kind {
-	case "offer", "answer", "ice":
+	case "offer", "answer", "ice", "quality":
 	default:
-		return errors.New("kind must be offer, answer or ice")
+		return errors.New("kind must be offer, answer, ice or quality")
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -147,6 +150,9 @@ func (h *Hub) relaySignal(from *Client, d signalData) error {
 	case v.teacher:
 		to = v.student
 	case v.student:
+		if d.Kind == "quality" {
+			return errors.New("only the viewer sets the quality")
+		}
 		to = v.teacher
 	default:
 		return errNoView

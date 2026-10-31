@@ -1,6 +1,7 @@
 // Screen sharing (docs/api-v1.md "Chia sẻ màn hình"): the student shares the
-// whole screen while in a running session; the session's teacher can watch
-// one student at a time per video tile. Video goes peer to peer over the LAN
+// whole screen while in a running session; the session's teacher watches up
+// to 15 students at once in a grid and caps each student's encoder frame
+// rate by grid size (resolution stays full so code remains readable). Video goes peer to peer over the LAN
 // (WebRTC without STUN/TURN); signaling uses the WebSocket (live.js).
 import * as live from './live.js';
 import { html, mount, toast } from './ui.js';
@@ -28,7 +29,7 @@ export function screenSupported() {
 // the whole screen is accepted, not a window or a tab.
 export async function startShare() {
   const s = await navigator.mediaDevices.getDisplayMedia({
-    video: { displaySurface: 'monitor', frameRate: { max: 10 } },
+    video: { displaySurface: 'monitor', frameRate: { max: 15 } },
     audio: false,
     monitorTypeSurfaces: 'include',
     selfBrowserSurface: 'exclude',
@@ -41,6 +42,8 @@ export async function startShare() {
     s.getTracks().forEach((t) => t.stop());
     throw new Error('Bạn phải chọn chia sẻ TOÀN BỘ MÀN HÌNH (không chọn cửa sổ hay tab).');
   }
+  // Screen text: drop frames rather than resolution when bandwidth is short.
+  if ('contentHint' in track) track.contentHint = 'detail';
   stopShare(false);
   stream = s;
   track.addEventListener('ended', () => {
@@ -96,6 +99,7 @@ live.on('webrtc.signal', async ({ view_id: id, kind, payload }) => {
     if (sp) { // student side: answer and candidates from the teacher
       if (kind === 'answer') await sp.setRemoteDescription(payload);
       else if (kind === 'ice') await sp.addIceCandidate(payload);
+      else if (kind === 'quality') await applyQuality(sp, payload);
       return;
     }
     const v = viewers.get(id);
@@ -104,9 +108,30 @@ live.on('webrtc.signal', async ({ view_id: id, kind, payload }) => {
       await v.pc.setRemoteDescription(payload);
       await v.pc.setLocalDescription(await v.pc.createAnswer());
       live.send('webrtc.signal', { view_id: id, kind: 'answer', payload: v.pc.localDescription.toJSON() });
+      if (v.h.quality) sendQuality(id, v.h.quality);
     } else if (kind === 'ice') await v.pc.addIceCandidate(payload);
   } catch (e) { console.error('webrtc', e); }
 });
+
+// applyQuality caps the encoder of one viewer's connection (student side):
+// {fps, bitrate} from the teacher's grid size, full resolution kept.
+async function applyQuality(pc, { fps, bitrate } = {}) {
+  for (const sender of pc.getSenders()) {
+    if (!sender.track || sender.track.kind !== 'video') continue;
+    const p = sender.getParameters();
+    if (!p.encodings || !p.encodings.length) continue; // not negotiated yet
+    for (const e of p.encodings) {
+      if (fps > 0) e.maxFramerate = fps;
+      if (bitrate > 0) e.maxBitrate = bitrate;
+      e.scaleResolutionDownBy = 1;
+    }
+    try {
+      await sender.setParameters({ ...p, degradationPreference: 'maintain-resolution' });
+    } catch {
+      await sender.setParameters(p); // browsers without degradationPreference
+    }
+  }
+}
 
 live.on('screen.stop', ({ view_id: id }) => {
   const sp = peers.get(id);
@@ -117,17 +142,25 @@ live.on('screen.stop', ({ view_id: id }) => {
 
 // ---------------------------------------------------------------- teacher
 
-// watch(studentId, {onTrack(stream), onEnd()}) asks the server to start a
-// view; the student's browser sends the offer. Returns a stop function.
+const sendQuality = (id, q) => live.send('webrtc.signal', { view_id: id, kind: 'quality', payload: q });
+
+// watch(studentId, {onTrack(stream), onEnd(), quality}) asks the server to
+// start a view; the student's browser sends the offer. Returns {stop,
+// setQuality({fps, bitrate})}; the quality is sent once the view answers.
 const pendingWatch = new Map(); // student_id -> handlers, until screen.view.started
 export function watch(studentId, handlers) {
   pendingWatch.set(studentId, handlers);
   live.send('screen.view', { student_id: studentId });
-  return () => {
-    pendingWatch.delete(studentId);
-    for (const [id, v] of viewers) {
-      if (v.studentId === studentId) { v.pc.close(); viewers.delete(id); live.send('screen.stop', { view_id: id }); }
-    }
+  const each = (fn) => { for (const [id, v] of viewers) if (v.studentId === studentId) fn(id, v); };
+  return {
+    stop() {
+      pendingWatch.delete(studentId);
+      each((id, v) => { v.pc.close(); viewers.delete(id); live.send('screen.stop', { view_id: id }); });
+    },
+    setQuality(q) {
+      handlers.quality = q;
+      each((id, v) => { if (v.pc.remoteDescription) sendQuality(id, q); });
+    },
   };
 }
 
@@ -140,7 +173,7 @@ live.on('screen.view.started', ({ view_id: id, student_id: sid }) => {
   pc.ontrack = (e) => h.onTrack(e.streams[0] || new MediaStream([e.track]));
   pc.onicecandidate = (e) => { if (e.candidate) live.send('webrtc.signal', { view_id: id, kind: 'ice', payload: e.candidate.toJSON() }); };
   pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') h.onError && h.onError('Không kết nối được tới máy sinh viên'); };
-  viewers.set(id, { pc, studentId: sid, onEnd: h.onEnd || (() => {}) });
+  viewers.set(id, { pc, h, studentId: sid, onEnd: h.onEnd || (() => {}) });
 });
 
 live.on('error', ({ message }) => {

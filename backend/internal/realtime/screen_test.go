@@ -127,6 +127,16 @@ func TestScreenViewSignalingIsPairwise(t *testing.T) {
 	if err := h.relaySignal(cs["otherTeacher"], signalData{ViewID: id, Kind: "ice"}); !errors.Is(err, errNoView) {
 		t.Errorf("other teacher relaying: %v", err)
 	}
+	// The viewer caps the student's encoder; the student cannot send it back.
+	if err := h.relaySignal(teacher, signalData{ViewID: id, Kind: "quality", Payload: json.RawMessage(`{"fps":3}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := types(drain(alice)); !slices.Equal(got, []string{"webrtc.signal"}) {
+		t.Errorf("alice got %v", got)
+	}
+	if err := h.relaySignal(alice, signalData{ViewID: id, Kind: "quality"}); err == nil {
+		t.Error("student sent quality")
+	}
 	if err := h.relaySignal(alice, signalData{ViewID: id, Kind: "bogus"}); err == nil {
 		t.Error("unknown kind accepted")
 	}
