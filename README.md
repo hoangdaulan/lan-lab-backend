@@ -14,12 +14,11 @@ Mã nguồn bài nộp và file test nằm trong thư mục `backend/data` trên
 
 1. [Yêu cầu](#1-yêu-cầu)
 2. [Cài đặt](#2-cài-đặt)
-3. [Tính năng UDP trong LAN](#3-tính-năng-udp-trong-lan-không-bắt-buộc)
-4. [Hướng dẫn cho giáo viên](#4-hướng-dẫn-cho-giáo-viên)
-5. [Hướng dẫn cho sinh viên](#5-hướng-dẫn-cho-sinh-viên)
-6. [Vận hành thường ngày](#6-vận-hành-thường-ngày)
-7. [Xử lý sự cố](#7-xử-lý-sự-cố)
-8. [Tài liệu thêm](#8-tài-liệu-thêm)
+3. [Hướng dẫn cho giáo viên](#3-hướng-dẫn-cho-giáo-viên)
+4. [Hướng dẫn cho sinh viên](#4-hướng-dẫn-cho-sinh-viên)
+5. [Vận hành thường ngày](#5-vận-hành-thường-ngày)
+6. [Xử lý sự cố](#6-xử-lý-sự-cố)
+7. [Tài liệu thêm](#7-tài-liệu-thêm)
 
 ---
 
@@ -31,7 +30,7 @@ Máy chủ (máy của giáo viên hoặc một máy trong phòng), chạy một
 - **Windows 10/11**: Docker Desktop + WSL2 (Ubuntu).
 - **macOS** (Apple Silicon hoặc Intel): Docker Desktop.
 
-Cần thêm `git` và `make` (cách cài cho từng hệ ở mục 2.1). Không bắt buộc: Node.js 20+ (chỉ khi sửa giao diện), Go 1.26 (chỉ khi chạy công cụ dòng lệnh như `lannet`, `wsprobe`).
+Cần thêm `git` và `make` (cách cài cho từng hệ ở mục 2.1). Không bắt buộc: Node.js 20+ (chỉ khi sửa giao diện), Go 1.26 (chỉ khi chạy công cụ dòng lệnh như `wsprobe`, `loadtest`).
 
 Máy sinh viên/giáo viên: Chrome, Edge hoặc Firefox bản mới, cùng mạng LAN với máy chủ. Hệ điều hành nào cũng được.
 
@@ -206,48 +205,15 @@ docker compose logs -f api
 
 Chứng chỉ được tạo trong `data/tls` khi api khởi động. Nếu đổi IP máy chủ, sửa `TLS_HOSTS` trong `.env` rồi chạy lại `make up`.
 
-## 3. Tính năng UDP trong LAN (không bắt buộc)
+## 3. Hướng dẫn cho giáo viên
 
-Giao diện web chỉ cần cổng 8080/8443 đã mở ở mục 2.1. Ngoài ra hệ thống có hai tính năng UDP viết tay (chi tiết trong `backend/docs/net-protocols.md`):
-
-- **Tìm máy chủ bằng broadcast**, cổng UDP `9999`: máy sinh viên gửi gói dò, máy chủ trả lời địa chỉ của nó.
-- **Phát thông báo qua multicast**, nhóm `239.255.42.99:9998`: thông báo của giáo viên được phát thêm qua UDP multicast.
-
-Gói broadcast/multicast không đi qua mạng NAT của Docker, nên api phải chạy ở chế độ mạng host bằng file `docker-compose.lan.yml`. Chế độ này dùng mạng của máy Linux chạy Docker, nên hãy bật tính năng UDP trên máy chủ Linux.
-
-```bash
-sudo ufw allow 9999/udp
-```
-
-```bash
-sudo ufw allow 9998/udp
-```
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build
-```
-
-Có thể đặt thêm trong `.env`: `ADVERTISE_HOST=<IP-máy-chủ>` (mặc định lấy IP đầu tiên trong `TLS_HOSTS`). Ở chế độ này `DISCOVERY_PORT` mặc định là `9999` và `ANNOUNCE_MULTICAST_ADDR` mặc định là `239.255.42.99:9998`.
-
-Kiểm tra từ một máy trong LAN (cần Go, chạy trong thư mục `backend/`):
-
-```bash
-go run ./cmd/lannet discover
-```
-
-```bash
-go run ./cmd/lannet announcements
-```
-
-## 4. Hướng dẫn cho giáo viên
-
-### 4.1. Đăng nhập
+### 3.1. Đăng nhập
 
 1. Mở `https://<IP>:8443/`.
 2. Nhập **mã tài khoản** (ví dụ `GV01` đã tạo bằng `make seed`) và mật khẩu.
 3. Thanh điều hướng có ba mục: **Đề thi**, **Sinh viên**, **Hàng đợi chấm**. Đổi mật khẩu ở menu tài khoản góc trên (mục **Đổi mật khẩu**).
 
-### 4.2. Thêm sinh viên
+### 3.2. Thêm sinh viên
 
 Vào **Sinh viên**.
 
@@ -268,7 +234,7 @@ Trần Thị Bình,SV002,12/01/2004
 
 **Mật khẩu ban đầu** của sinh viên là ngày sinh dạng `ddmmyyyy` (ví dụ `05/09/2004` → `05092004`). Sinh viên quên mật khẩu thì tìm theo MSV/họ tên và bấm **Đặt lại mật khẩu** để đưa về ngày sinh.
 
-### 4.3. Tạo đề thi và bài tập
+### 3.3. Tạo đề thi và bài tập
 
 1. Vào **Đề thi**, nhập **Tên đề**, **Mô tả**, bấm **Tạo đề thi**. Trang chi tiết đề sẽ mở ra.
 2. Ở mục **Bài tập**, bấm **+ Thêm bài** và điền:
@@ -276,7 +242,7 @@ Trần Thị Bình,SV002,12/01/2004
    - **Giới hạn thời gian (ms)** (mặc định 1000) và **Giới hạn bộ nhớ (MB)** (mặc định 256).
 3. Sau khi lưu, cột **Thư mục test trên máy chủ** hiện đường dẫn dạng `./data/problems/<id>/tests`.
 
-### 4.4. Thêm file test
+### 3.4. Thêm file test
 
 Test là các cặp file `N.in` / `N.out` đặt trực tiếp trên máy chủ, trong thư mục của bài (tính từ `backend/`):
 
@@ -305,7 +271,7 @@ Quy tắc:
 
 Nếu thư mục sai quy tắc, hệ thống báo lỗi và **không thay đổi gì**.
 
-### 4.5. Tạo phiên thi
+### 3.5. Tạo phiên thi
 
 1. Trong trang đề, mục **Phiên thi**, bấm **+ Thêm phiên**.
 2. Đặt **Tên phiên** (ví dụ `Ca 1`), giờ **Bắt đầu** và **Kết thúc**. Máy chủ dùng giờ của nó để mở/đóng nộp bài, nên hãy đảm bảo giờ máy chủ đúng.
@@ -313,7 +279,7 @@ Nếu thư mục sai quy tắc, hệ thống báo lỗi và **không thay đổi
 
 Sinh viên chỉ vào làm bài được trong khung giờ của phiên.
 
-### 4.6. Điều hành phiên thi
+### 3.6. Điều hành phiên thi
 
 Trang phiên có năm tab và nút **Xuất CSV** (tải bảng điểm, mở được bằng Excel).
 
@@ -341,7 +307,7 @@ Video đi thẳng từ máy sinh viên tới máy giáo viên trong LAN (WebRTC)
 
 **Thông báo:** nhập nội dung (ví dụ "Còn 10 phút") và bấm **Gửi tới cả phiên**. Sinh viên đang mở trang thấy ngay. Thông báo chỉ lưu trong bộ nhớ của api, sẽ mất khi khởi động lại api.
 
-### 4.7. Chấm lại
+### 3.7. Chấm lại
 
 - **Sửa test:** sửa/thêm/xóa file trong `data/problems/<id>/tests/`, rồi bấm **Quét test & chấm lại**. Bài tăng version và **mọi bài đã nộp** của bài đó được chấm lại theo test mới.
 - **Đổi giới hạn thời gian/bộ nhớ:** bấm **Sửa** ở dòng bài, lưu lại; hệ thống tự chấm lại mọi bài đã nộp của bài đó.
@@ -349,17 +315,17 @@ Video đi thẳng từ máy sinh viên tới máy giáo viên trong LAN (WebRTC)
 
 Có thể chấm lại cả khi phiên đang diễn ra; bảng trực tiếp tự cập nhật khi có kết quả mới.
 
-### 4.8. Hàng đợi chấm
+### 3.8. Hàng đợi chấm
 
 Trang **Hàng đợi chấm** cho biết số bài đang chờ, đang chấm, đã xong, worker đang giữ bài, bài chờ lâu nhất và thời gian chờ/chấm trung bình trong 10 phút gần nhất. Trang tự làm mới mỗi 3 giây.
 
-### 4.9. Xóa
+### 3.9. Xóa
 
 - Xóa bài: chỉ được khi bài chưa có bài nộp.
 - Xóa phiên: chỉ được khi phiên chưa có bài nộp.
 - Xóa đề: chỉ được khi đề không còn bài và phiên.
 
-## 5. Hướng dẫn cho sinh viên
+## 4. Hướng dẫn cho sinh viên
 
 1. **Mở trang:** `https://<IP-máy-chủ>:8443/` (giáo viên sẽ cho địa chỉ). Lần đầu chấp nhận cảnh báo chứng chỉ.
 2. **Đăng nhập:** mã tài khoản là **MSV**, mật khẩu ban đầu là **ngày sinh dạng `ddmmyyyy`** (sinh ngày 05/09/2004 thì mật khẩu là `05092004`). Nên đổi mật khẩu ở menu tài khoản → **Đổi mật khẩu**.
@@ -378,7 +344,7 @@ Trang **Hàng đợi chấm** cho biết số bài đang chờ, đang chấm, đ
 
 Phím tắt và hướng dẫn: nút **Hướng dẫn và phím tắt** (biểu tượng dấu hỏi) trên thanh trên cùng.
 
-## 6. Vận hành thường ngày
+## 5. Vận hành thường ngày
 
 Chạy trong `backend/`:
 
@@ -395,7 +361,7 @@ Chạy trong `backend/`:
 
 Sửa giao diện (thư mục `web/src` ở gốc repo): chạy `npm install` rồi `npm run build` ở gốc repo, sau đó `make up` để build lại api (giao diện được nhúng vào binary).
 
-## 7. Xử lý sự cố
+## 6. Xử lý sự cố
 
 - **Máy sinh viên không mở được trang:** kiểm tra cùng mạng (`ping <IP>`), đã mở cổng 8080/8443 trên tường lửa (mục 2.1), và `docker compose ps` thấy `api` đang chạy.
 - **Không chia sẻ màn hình được / báo "Trình duyệt không chia sẻ màn hình được":** phải mở bằng `https://<IP>:8443/`, không phải `http://`, trên Chrome/Edge/Firefox mới.
@@ -404,10 +370,10 @@ Sửa giao diện (thư mục `web/src` ở gốc repo): chạy `npm install` r�
 - **Bài báo "Lỗi hệ thống" hoặc test không quét được:** kiểm tra quyền thư mục `data/` khớp với `APP_UID`/`APP_GID` trong `.env`, và các file `N.in`/`N.out` đủ cặp.
 - **Lỗi `set POSTGRES_USER in .env` khi chạy `make`:** chưa tạo `.env` hoặc đang đứng sai thư mục; chạy lệnh trong `backend/`.
 
-## 8. Tài liệu thêm
+## 7. Tài liệu thêm
 
 - `backend/BACKEND_CONTEXT.md`: thiết kế backend chi tiết.
 - `backend/docs/api-v1.md`, Swagger UI tại `/swagger/index.html`: REST và WebSocket.
-- `backend/docs/net-protocols.md`: giao thức TCP dispatch và UDP discovery/multicast.
+- `backend/docs/net-protocols.md`: các giao thức mạng viết tay (TCP dispatch giữa api và worker).
 - `backend/docs/DEMO.md`: kịch bản demo.
 - `backend/examples/api-manual.http`: ví dụ gọi API.
