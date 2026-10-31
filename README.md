@@ -27,7 +27,7 @@ Mã nguồn bài nộp và file test nằm trong thư mục `backend/data` trên
 
 Máy chủ (máy của giáo viên hoặc một máy trong phòng):
 
-- Linux (đã thử trên Ubuntu), Docker Engine và Docker Compose v2 (`docker compose version`).
+- Linux (đã thử trên Ubuntu), Docker Engine và Docker Compose v2 (`docker compose version`). Windows (qua WSL2) và macOS chạy được bằng Docker Desktop, xem [mục 2.5](#25-chạy-máy-chủ-trên-windows-hoặc-macos).
 - `git`, `make`.
 - Không bắt buộc: Node.js 20+ (chỉ khi sửa giao diện), Go 1.26 (chỉ khi chạy công cụ dòng lệnh như `lannet`, `wsprobe`).
 
@@ -104,9 +104,63 @@ docker compose logs -f api
 
 Chứng chỉ được tạo trong `data/tls` khi api khởi động. Nếu đổi IP máy chủ, sửa `TLS_HOSTS` trong `.env` rồi chạy lại `make up`.
 
+### 2.5. Chạy máy chủ trên Windows hoặc macOS
+
+Hệ thống được phát triển và kiểm thử trên Linux; với kỳ thi thật nên dùng máy chủ Linux. Trên Windows và macOS, Docker Desktop chạy các container trong một máy ảo Linux nên vẫn chạy được, với các khác biệt dưới đây (chưa kiểm thử đầy đủ trên hai hệ này).
+
+#### Windows (qua WSL2)
+
+1. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/), bật tùy chọn **Use the WSL 2 based engine**.
+2. Cài Ubuntu cho WSL (PowerShell quyền quản trị), khởi động lại máy nếu được yêu cầu:
+
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+
+3. Trong Docker Desktop: **Settings → Resources → WSL integration**, bật cho Ubuntu.
+4. Mở terminal **Ubuntu** và cài công cụ:
+
+   ```bash
+   sudo apt update && sudo apt install -y git make
+   ```
+
+5. Clone vào thư mục của WSL (ví dụ `~/lan-lab`), **không** clone vào `C:\` hay `/mnt/c/...`: ổ NTFS không giữ quyền file Linux, mà worker cần quyền đó để chặn bài sinh viên đọc file đáp án.
+
+   ```bash
+   cd ~ && git clone https://github.com/hoangdaulan/lan-lab && cd lan-lab/backend
+   ```
+
+6. Làm tiếp như mục 2.2–2.4, tất cả lệnh chạy trong terminal Ubuntu. `TLS_HOSTS` là IP LAN của **máy Windows** (xem bằng `ipconfig` trong PowerShell), không phải IP của WSL.
+7. Mở cổng cho máy khác trong LAN bằng Windows Defender Firewall (PowerShell quyền quản trị), thay cho `ufw` ở mục 3:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "LAN Judge" -Direction Inbound -Protocol TCP -LocalPort 8080,8443 -Action Allow
+   ```
+
+#### macOS
+
+1. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/) (bản cho Apple Silicon hoặc Intel tùy máy) và mở nó lên.
+2. Cài `git` và `make`:
+
+   ```bash
+   xcode-select --install
+   ```
+
+3. Làm như mục 2.1–2.4. Trong `.env`:
+   - `APP_UID`/`APP_GID` đặt bằng kết quả của `id -u` và `id -g` (thường là `501` và `20`).
+   - `TLS_HOSTS` là IP LAN của máy Mac, xem bằng `ipconfig getifaddr en0` (Wi-Fi) hoặc trong **System Settings → Network**.
+4. Nếu bật tường lửa macOS (**System Settings → Network → Firewall**), cho phép Docker nhận kết nối đến khi được hỏi, để máy khác truy cập được cổng 8080/8443.
+
+Lưu ý: chia sẻ thư mục của Docker Desktop trên macOS không đảm bảo quyền file giống Linux, nên việc chặn bài sinh viên đọc thư mục `data/` có thể không chặt bằng trên máy chủ Linux.
+
+#### Giới hạn chung trên Windows và macOS
+
+- Tính năng UDP ở mục 3 (`docker-compose.lan.yml`, broadcast 9999 và multicast 9998) cần mạng host thật, mà Docker Desktop không có, nên gần như chắc chắn gói UDP không ra được LAN. Giao diện web, chấm bài, WebSocket, thông báo và xem màn hình vẫn hoạt động bình thường qua cổng 8080/8443.
+- Thời gian chạy bài trong máy ảo có thể chậm hơn chạy trên Linux thật; nếu thấy TLE bất thường, nới giới hạn thời gian của bài.
+
 ## 3. Mạng LAN và tường lửa
 
-Mở các cổng cho máy khác trong phòng truy cập (Ubuntu dùng `ufw`):
+Mở các cổng cho máy khác trong phòng truy cập (Ubuntu dùng `ufw`; Windows/macOS xem mục 2.5):
 
 ```bash
 sudo ufw allow 8080/tcp
