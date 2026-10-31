@@ -1,0 +1,113 @@
+# LAN deployment: browsers open https://<server-ip>:8443 (self-signed
+# certificate; http://<server-ip>:8080 redirects there). Plain HTTP on 8080
+# stays for scripts and tools.
+# Copy .env.example to .env and set real secrets before `make up`.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Host database tools use 127.0.0.1:${DB_PORT:-5433}. The web bridge permits host
+    # port publishing; api/worker keep using postgres:5432 on the db network.
+    networks: [db, web]
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      HTTP_ADDR: ":8080"
+      HTTPS_ADDR: ":8443"
+      HTTPS_PUBLIC_PORT: ${API_HTTPS_PORT:-8443}
+      # The server's LAN IP(s) for the certificate, e.g. 192.168.1.9.
+      TLS_HOSTS: ${TLS_HOSTS:-}
+      DATA_DIR: /data
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
+      # Judge workers connect here (TCP dispatch protocol,
+      # docs/net-protocols.md §1). Not published: the worker reaches it as
+      # api:7070 on the db network.
+      DISPATCH_ADDR: ":7070"
+      DISPATCH_TOKEN: ${DISPATCH_TOKEN:-}
+      # UDP discovery / multicast announcements (docs/net-protocols.md
+      # §2-3). Broadcast and multicast do not cross Docker's NAT bridge:
+      # use docker-compose.lan.yml (host networking) to reach the LAN.
+      DISCOVERY_PORT: ${DISCOVERY_PORT:-0}
+      ADVERTISE_HOST: ${ADVERTISE_HOST:-}
+      ANNOUNCE_MULTICAST_ADDR: ${ANNOUNCE_MULTICAST_ADDR:-}
+    # Runs as the owner of ./data so files the teacher edits on the host stay
+    # readable/writable by the containers.
+    user: "${APP_UID:-10001}:${APP_GID:-10001}"
+    ports:
+      # Bound on all interfaces so LAN clients can connect.
+      - "0.0.0.0:${API_PORT:-8080}:8080"
+      # HTTPS for browsers (screen sharing needs a secure context).
+      - "0.0.0.0:${API_HTTPS_PORT:-8443}:8443"
+    volumes:
+      # Bind mount: teachers edit test .in/.out files directly under ./data on
+      # the server, then press "rejudge" (BACKEND_CONTEXT.md §17).
+      - ./data:/data
+    networks: [db, web]
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_DIR: /data
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      WORKER_LISTEN: ${WORKER_LISTEN:-true}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+      WORKER_LEASE: ${WORKER_LEASE:-60s}
+      # Jobs are pushed over TCP by the API; empty = polling only. While
+      # the connection is down the worker polls the database as before.
+      WORKER_DISPATCH_ADDR: ${WORKER_DISPATCH_ADDR:-api:7070}
+      DISPATCH_TOKEN: ${DISPATCH_TOKEN:-}
+    # Root inside the container with only the capabilities the sandbox needs
+    # (BACKEND_CONTEXT.md §19): SYS_ADMIN for a new network namespace per
+    # program, SETUID/SETGID to run it as runner uid 20000+slot, CHOWN/FOWNER
+    # for its scratch directory, DAC_OVERRIDE to read ./data (chmod 0750 at
+    # start so runner uids cannot), KILL to stop programs. Student programs
+    # get none of these: no capabilities, no_new_privs, setrlimit limits.
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Same directory as api: api writes sources, worker reads sources/tests.
+      - ./data:/data
+    # Only the internal `db` network: the worker can reach PostgreSQL but has
+    # no route to the LAN/Internet; student programs have no network at all.
+    networks: [db]
+
+networks:
+  db:
+    internal: true
+  web: {}
+
+volumes:
+  pgdata: {}
