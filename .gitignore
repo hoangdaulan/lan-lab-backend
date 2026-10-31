@@ -1,0 +1,37 @@
+# Local secrets; keep configuration examples in source control.
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+
+# Runtime data: student submissions, problem test cases, uploads and TLS keys.
+# Compose mounts backend/data at /data; local tools may use data at repo root.
+data/
+data.before-restore-*/
+
+# Database and runtime-data backups, including exam/problem records.
+backups/
+*.dump
+
+# Dependencies, local builds, browser-test artifacts and temporary files.
+node_modules/
+bin/
+artifacts/
+tmp/
+*.test
+coverage.out
+*.coverprofile
+*.log
+
+# Editor and operating-system files.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
+
+# Keep automated tests, migrations, examples and backend/web/static tracked:
+# these are required to develop, build and run a fresh checkout.
