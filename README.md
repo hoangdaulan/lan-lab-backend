@@ -14,7 +14,7 @@ Mã nguồn bài nộp và file test nằm trong thư mục `backend/data` trên
 
 1. [Yêu cầu](#1-yêu-cầu)
 2. [Cài đặt](#2-cài-đặt)
-3. [Mạng LAN và tường lửa](#3-mạng-lan-và-tường-lửa)
+3. [Tính năng UDP trong LAN](#3-tính-năng-udp-trong-lan-không-bắt-buộc)
 4. [Hướng dẫn cho giáo viên](#4-hướng-dẫn-cho-giáo-viên)
 5. [Hướng dẫn cho sinh viên](#5-hướng-dẫn-cho-sinh-viên)
 6. [Vận hành thường ngày](#6-vận-hành-thường-ngày)
@@ -25,47 +25,149 @@ Mã nguồn bài nộp và file test nằm trong thư mục `backend/data` trên
 
 ## 1. Yêu cầu
 
-Máy chủ (máy của giáo viên hoặc một máy trong phòng):
+Máy chủ (máy của giáo viên hoặc một máy trong phòng), chạy một trong các hệ điều hành:
 
-- Linux (đã thử trên Ubuntu), Docker Engine và Docker Compose v2 (`docker compose version`). Windows (qua WSL2) và macOS chạy được bằng Docker Desktop, xem [mục 2.5](#25-chạy-máy-chủ-trên-windows-hoặc-macos).
-- `git`, `make`.
-- Không bắt buộc: Node.js 20+ (chỉ khi sửa giao diện), Go 1.26 (chỉ khi chạy công cụ dòng lệnh như `lannet`, `wsprobe`).
+- **Linux** (Ubuntu 22.04/24.04 hoặc tương đương): Docker Engine + Docker Compose v2.
+- **Windows 10/11**: Docker Desktop + WSL2 (Ubuntu).
+- **macOS** (Apple Silicon hoặc Intel): Docker Desktop.
 
-Máy sinh viên/giáo viên: Chrome, Edge hoặc Firefox bản mới, cùng mạng LAN với máy chủ.
+Cần thêm `git` và `make` (cách cài cho từng hệ ở mục 2.1). Không bắt buộc: Node.js 20+ (chỉ khi sửa giao diện), Go 1.26 (chỉ khi chạy công cụ dòng lệnh như `lannet`, `wsprobe`).
+
+Máy sinh viên/giáo viên: Chrome, Edge hoặc Firefox bản mới, cùng mạng LAN với máy chủ. Hệ điều hành nào cũng được.
 
 ## 2. Cài đặt
 
-### 2.1. Lấy mã nguồn
+### 2.1. Chuẩn bị máy chủ
+
+Làm phần ứng với hệ điều hành của máy chủ, sau đó chuyển sang mục 2.2.
+
+#### Linux (Ubuntu)
+
+1. Cài Docker, Compose, git và make:
+
+   ```bash
+   sudo apt update && sudo apt install -y docker.io docker-compose-v2 git make
+   ```
+
+   (Hoặc cài Docker Engine bản mới nhất theo [hướng dẫn chính thức](https://docs.docker.com/engine/install/ubuntu/).)
+
+2. Cho phép user hiện tại dùng Docker không cần `sudo`, rồi đăng xuất và đăng nhập lại:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+3. Kiểm tra:
+
+   ```bash
+   docker compose version
+   ```
+
+4. Mở cổng cho máy khác trong LAN:
+
+   ```bash
+   sudo ufw allow 8080/tcp
+   ```
+
+   ```bash
+   sudo ufw allow 8443/tcp
+   ```
+
+5. Xem IP LAN của máy chủ (dùng cho `TLS_HOSTS` ở mục 2.3):
+
+   ```bash
+   hostname -I
+   ```
+
+Mọi lệnh ở các mục sau chạy trong terminal bình thường.
+
+#### Windows (Docker Desktop + WSL2)
+
+1. Cài Ubuntu cho WSL: mở **PowerShell bằng quyền quản trị** và chạy lệnh dưới, khởi động lại máy nếu được yêu cầu, rồi mở **Ubuntu** từ menu Start để tạo user Linux:
+
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+
+2. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/), trong lúc cài chọn **Use WSL 2 instead of Hyper-V**. Mở Docker Desktop, vào **Settings → Resources → WSL integration**, bật cho **Ubuntu**, bấm **Apply & restart**.
+3. Trong terminal **Ubuntu**, cài git và make:
+
+   ```bash
+   sudo apt update && sudo apt install -y git make
+   ```
+
+4. Kiểm tra Docker từ Ubuntu:
+
+   ```bash
+   docker compose version
+   ```
+
+5. Mở cổng cho máy khác trong LAN: trong **PowerShell quyền quản trị**:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "LAN Judge" -Direction Inbound -Protocol TCP -LocalPort 8080,8443 -Action Allow
+   ```
+
+6. Xem IP LAN của **máy Windows** (dùng cho `TLS_HOSTS` ở mục 2.3; không dùng IP của WSL): chạy `ipconfig` trong PowerShell, lấy dòng **IPv4 Address** của card Wi-Fi/Ethernet.
+
+Mọi lệnh ở các mục sau chạy trong **terminal Ubuntu**. Clone mã nguồn vào thư mục nhà của Ubuntu (`~`), không clone vào `C:\` hay `/mnt/c/...`, để thư mục `data/` giữ đúng quyền file Linux.
+
+#### macOS
+
+1. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/) (chọn bản **Apple Silicon** hoặc **Intel** theo máy), mở nó lên và chờ biểu tượng Docker báo đang chạy.
+2. Cài git và make (Command Line Tools của Xcode):
+
+   ```bash
+   xcode-select --install
+   ```
+
+3. Kiểm tra:
+
+   ```bash
+   docker compose version
+   ```
+
+4. Tường lửa: nếu đã bật **System Settings → Network → Firewall**, khi Docker hỏi cho phép nhận kết nối đến thì chọn **Allow** để máy khác vào được cổng 8080/8443.
+5. Xem IP LAN của máy Mac (dùng cho `TLS_HOSTS` ở mục 2.3):
+
+   ```bash
+   ipconfig getifaddr en0
+   ```
+
+   (Nếu không ra kết quả, thử `en1`, hoặc xem trong **System Settings → Network**.)
+
+Mọi lệnh ở các mục sau chạy trong ứng dụng **Terminal**.
+
+### 2.2. Lấy mã nguồn
 
 ```bash
-git clone https://github.com/hoangdaulan/lan-lab
-cd lan-lab/backend
+cd ~ && git clone https://github.com/hoangdaulan/lan-lab && cd lan-lab/backend
 ```
 
 Mọi lệnh `make` và `docker compose` bên dưới chạy trong thư mục `backend/`.
 
-### 2.2. Tạo file `.env`
+### 2.3. Tạo file `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Mở `.env` và sửa ít nhất các dòng sau (file này đã nằm trong `.gitignore`, không commit):
+Mở `.env` (ví dụ `nano .env`) và sửa ít nhất các dòng sau (file này đã nằm trong `.gitignore`, không commit):
 
 | Biến | Ý nghĩa | Gợi ý |
 | --- | --- | --- |
-| `POSTGRES_PASSWORD` | Mật khẩu PostgreSQL | Chuỗi ngẫu nhiên, ví dụ `openssl rand -hex 16` |
+| `POSTGRES_PASSWORD` | Mật khẩu PostgreSQL | Chuỗi ngẫu nhiên, tạo bằng `openssl rand -hex 16` |
 | `JWT_SECRET` | Khóa ký token đăng nhập | `openssl rand -hex 32` |
-| `TLS_HOSTS` | IP LAN của máy chủ, ghi vào chứng chỉ HTTPS | Ví dụ `192.168.1.9` (xem `ip -4 addr`) |
-| `APP_UID`, `APP_GID` | Chủ sở hữu thư mục `data/` | Đặt bằng `id -u` và `id -g` để sửa file test không cần `sudo` |
+| `TLS_HOSTS` | IP LAN của máy chủ, ghi vào chứng chỉ HTTPS | IP đã xem ở mục 2.1, ví dụ `192.168.1.9` |
+| `APP_UID`, `APP_GID` | Chủ sở hữu thư mục `data/` | Kết quả của `id -u` và `id -g` (Linux/WSL thường là `1000`, macOS thường là `501` và `20`) |
 | `DISPATCH_TOKEN` | Khóa chung giữa api và worker | `openssl rand -hex 16` |
 | `WORKER_CONCURRENCY` | Số bài chấm song song | Mặc định `2`; tăng nếu máy nhiều nhân |
 
 Các biến khác (`API_PORT=8080`, `API_HTTPS_PORT=8443`, `DB_PORT=5433`) giữ nguyên nếu không trùng cổng.
 
-> Nếu giữ `APP_UID=10001`, cần cấp quyền thư mục dữ liệu: `sudo chown -R 10001:10001 data`.
+> Đặt `APP_UID`/`APP_GID` theo user của bạn để sửa file test không cần `sudo`. Nếu giữ `10001`, cần cấp quyền thư mục dữ liệu: `sudo chown -R 10001:10001 data`.
 
-### 2.3. Khởi động, tạo bảng và tài khoản giáo viên đầu tiên
+### 2.4. Khởi động, tạo bảng và tài khoản giáo viên đầu tiên
 
 ```bash
 make up
@@ -95,91 +197,23 @@ docker compose ps
 docker compose logs -f api
 ```
 
-### 2.4. Mở giao diện web
+### 2.5. Mở giao diện web
 
-- Trên trình duyệt: `https://<IP-máy-chủ>:8443/` (ví dụ `https://192.168.1.9:8443/`).
+- Trên trình duyệt: `https://<IP-máy-chủ>:8443/` (ví dụ `https://192.168.1.9:8443/`). Trên chính máy chủ có thể dùng `https://localhost:8443/`.
 - Chứng chỉ là tự ký nên trình duyệt sẽ cảnh báo lần đầu: chọn **Nâng cao → Tiếp tục truy cập**. Mỗi máy chỉ cần làm một lần.
 - `http://<IP>:8080` sẽ tự chuyển sang HTTPS. Phải dùng HTTPS vì trình duyệt chỉ cho chia sẻ màn hình trên kết nối bảo mật.
 - Swagger UI (thử API): `http://<IP>:8080/swagger/index.html`.
 
 Chứng chỉ được tạo trong `data/tls` khi api khởi động. Nếu đổi IP máy chủ, sửa `TLS_HOSTS` trong `.env` rồi chạy lại `make up`.
 
-### 2.5. Chạy máy chủ trên Windows hoặc macOS
+## 3. Tính năng UDP trong LAN (không bắt buộc)
 
-Hệ thống được phát triển và kiểm thử trên Linux; với kỳ thi thật nên dùng máy chủ Linux. Trên Windows và macOS, Docker Desktop chạy các container trong một máy ảo Linux nên vẫn chạy được, với các khác biệt dưới đây (chưa kiểm thử đầy đủ trên hai hệ này).
-
-#### Windows (qua WSL2)
-
-1. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/), bật tùy chọn **Use the WSL 2 based engine**.
-2. Cài Ubuntu cho WSL (PowerShell quyền quản trị), khởi động lại máy nếu được yêu cầu:
-
-   ```powershell
-   wsl --install -d Ubuntu
-   ```
-
-3. Trong Docker Desktop: **Settings → Resources → WSL integration**, bật cho Ubuntu.
-4. Mở terminal **Ubuntu** và cài công cụ:
-
-   ```bash
-   sudo apt update && sudo apt install -y git make
-   ```
-
-5. Clone vào thư mục của WSL (ví dụ `~/lan-lab`), **không** clone vào `C:\` hay `/mnt/c/...`: ổ NTFS không giữ quyền file Linux, mà worker cần quyền đó để chặn bài sinh viên đọc file đáp án.
-
-   ```bash
-   cd ~ && git clone https://github.com/hoangdaulan/lan-lab && cd lan-lab/backend
-   ```
-
-6. Làm tiếp như mục 2.2–2.4, tất cả lệnh chạy trong terminal Ubuntu. `TLS_HOSTS` là IP LAN của **máy Windows** (xem bằng `ipconfig` trong PowerShell), không phải IP của WSL.
-7. Mở cổng cho máy khác trong LAN bằng Windows Defender Firewall (PowerShell quyền quản trị), thay cho `ufw` ở mục 3:
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "LAN Judge" -Direction Inbound -Protocol TCP -LocalPort 8080,8443 -Action Allow
-   ```
-
-#### macOS
-
-1. Cài [Docker Desktop](https://www.docker.com/products/docker-desktop/) (bản cho Apple Silicon hoặc Intel tùy máy) và mở nó lên.
-2. Cài `git` và `make`:
-
-   ```bash
-   xcode-select --install
-   ```
-
-3. Làm như mục 2.1–2.4. Trong `.env`:
-   - `APP_UID`/`APP_GID` đặt bằng kết quả của `id -u` và `id -g` (thường là `501` và `20`).
-   - `TLS_HOSTS` là IP LAN của máy Mac, xem bằng `ipconfig getifaddr en0` (Wi-Fi) hoặc trong **System Settings → Network**.
-4. Nếu bật tường lửa macOS (**System Settings → Network → Firewall**), cho phép Docker nhận kết nối đến khi được hỏi, để máy khác truy cập được cổng 8080/8443.
-
-Lưu ý: chia sẻ thư mục của Docker Desktop trên macOS không đảm bảo quyền file giống Linux, nên việc chặn bài sinh viên đọc thư mục `data/` có thể không chặt bằng trên máy chủ Linux.
-
-#### Giới hạn chung trên Windows và macOS
-
-- Tính năng UDP ở mục 3 (`docker-compose.lan.yml`, broadcast 9999 và multicast 9998) cần mạng host thật, mà Docker Desktop không có, nên gần như chắc chắn gói UDP không ra được LAN. Giao diện web, chấm bài, WebSocket, thông báo và xem màn hình vẫn hoạt động bình thường qua cổng 8080/8443.
-- Thời gian chạy bài trong máy ảo có thể chậm hơn chạy trên Linux thật; nếu thấy TLE bất thường, nới giới hạn thời gian của bài.
-
-## 3. Mạng LAN và tường lửa
-
-Mở các cổng cho máy khác trong phòng truy cập (Ubuntu dùng `ufw`; Windows/macOS xem mục 2.5):
-
-```bash
-sudo ufw allow 8080/tcp
-```
-
-```bash
-sudo ufw allow 8443/tcp
-```
-
-Như vậy là đủ để dùng giao diện web.
-
-### Tính năng UDP (không bắt buộc)
-
-Hệ thống có thêm hai tính năng UDP viết tay (chi tiết trong `backend/docs/net-protocols.md`):
+Giao diện web chỉ cần cổng 8080/8443 đã mở ở mục 2.1. Ngoài ra hệ thống có hai tính năng UDP viết tay (chi tiết trong `backend/docs/net-protocols.md`):
 
 - **Tìm máy chủ bằng broadcast**, cổng UDP `9999`: máy sinh viên gửi gói dò, máy chủ trả lời địa chỉ của nó.
 - **Phát thông báo qua multicast**, nhóm `239.255.42.99:9998`: thông báo của giáo viên được phát thêm qua UDP multicast.
 
-Gói broadcast/multicast không đi qua mạng NAT của Docker, nên muốn dùng thì api phải chạy ở chế độ mạng host bằng file `docker-compose.lan.yml`:
+Gói broadcast/multicast không đi qua mạng NAT của Docker, nên api phải chạy ở chế độ mạng host bằng file `docker-compose.lan.yml`. Chế độ này dùng mạng của máy Linux chạy Docker, nên hãy bật tính năng UDP trên máy chủ Linux.
 
 ```bash
 sudo ufw allow 9999/udp
@@ -195,7 +229,7 @@ docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build
 
 Có thể đặt thêm trong `.env`: `ADVERTISE_HOST=<IP-máy-chủ>` (mặc định lấy IP đầu tiên trong `TLS_HOSTS`). Ở chế độ này `DISCOVERY_PORT` mặc định là `9999` và `ANNOUNCE_MULTICAST_ADDR` mặc định là `239.255.42.99:9998`.
 
-Kiểm tra từ một máy trong LAN (cần Go):
+Kiểm tra từ một máy trong LAN (cần Go, chạy trong thư mục `backend/`):
 
 ```bash
 go run ./cmd/lannet discover
@@ -260,6 +294,8 @@ Ví dụ chép bộ test từ máy chủ:
 ```bash
 cp ~/bo-test-bai-A/*.in ~/bo-test-bai-A/*.out data/problems/1/tests/
 ```
+
+Trên Windows có thể mở thư mục này bằng File Explorer tại `\\wsl$\Ubuntu\home\<user-ubuntu>\lan-lab\backend\data` rồi kéo thả file vào; trên macOS mở bằng `open data/problems/1/tests` trong Terminal.
 
 Quy tắc:
 
@@ -361,7 +397,7 @@ Sửa giao diện (thư mục `web/src` ở gốc repo): chạy `npm install` r�
 
 ## 7. Xử lý sự cố
 
-- **Máy sinh viên không mở được trang:** kiểm tra cùng mạng (`ping <IP>`), đã mở cổng 8080/8443 trên `ufw`, và `docker compose ps` thấy `api` đang chạy.
+- **Máy sinh viên không mở được trang:** kiểm tra cùng mạng (`ping <IP>`), đã mở cổng 8080/8443 trên tường lửa (mục 2.1), và `docker compose ps` thấy `api` đang chạy.
 - **Không chia sẻ màn hình được / báo "Trình duyệt không chia sẻ màn hình được":** phải mở bằng `https://<IP>:8443/`, không phải `http://`, trên Chrome/Edge/Firefox mới.
 - **Trình duyệt báo chứng chỉ không khớp:** `TLS_HOSTS` chưa có IP hiện tại của máy chủ. Sửa `.env` rồi `make up`.
 - **Bài nộp đứng ở "Đang chờ":** xem `docker compose logs worker` và trang **Hàng đợi chấm**. Bài không bị mất khi worker khởi động lại; nó sẽ được chấm lại.
