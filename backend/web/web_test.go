@@ -20,6 +20,8 @@ func TestMountServesPageAndAssets(t *testing.T) {
 		{"/", 200, "text/html"},
 		{"/assets/app.js", 200, "javascript"},
 		{"/assets/style.css", 200, "text/css"},
+		{"/assets/fonts/plex-sans-vietnamese.woff2", 200, "font/woff2"},
+		{"/assets/favicon.svg", 200, "image/svg+xml"},
 		{"/assets/missing.js", 404, ""},
 	}
 	for _, c := range cases {

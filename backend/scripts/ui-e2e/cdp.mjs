@@ -52,6 +52,7 @@ async function connect(url) {
       await send('Runtime.enable', {}, sessionId);
       await send('Page.enable', {}, sessionId);
       const page = {
+        send: (method, params = {}) => send(method, params, sessionId),
         async goto(url) {
           await send('Page.navigate', { url }, sessionId);
           await page.waitFor('document.readyState === "complete"');

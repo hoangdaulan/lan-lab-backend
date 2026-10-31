@@ -411,15 +411,18 @@ Từ máy khác trong LAN: `http://<IP-máy-chủ>:8080/healthz`, Swagger UI: `h
 
 ## 11.2. Start Client
 
-**Giao diện web có sẵn** (HTML/CSS/JS thuần, nhúng trong binary API, không cần Internet hay build): mở `https://<IP-máy-chủ>:8443/` trên trình duyệt (Chrome/Edge/Firefox mới) của mọi máy trong LAN.
+**Giao diện web có sẵn** (React được biên dịch sẵn, nhúng trong binary API, không cần Internet hay Node khi triển khai): mở `https://<IP-máy-chủ>:8443/` trên trình duyệt (Chrome/Edge/Firefox mới) của mọi máy trong LAN.
 
 * Giáo viên: quản lý sinh viên (thêm, import CSV, đặt lại mật khẩu), đề → bài (đề bài, giới hạn, thư mục test, "Quét test & chấm lại") → phiên; bảng trực tiếp `x/N AC` (online, hàng đợi), bài nộp (mã nguồn, kết quả từng test, chấm lại), thông báo, xuất CSV, trang hàng đợi.
 * Chia sẻ màn hình (bắt buộc): SV vào phiên đang mở phải chia sẻ **toàn bộ màn hình** thì trang làm bài mới mở khóa; tắt chia sẻ là khóa lại. GV mở phiên → tab **"Màn hình SV"**: ai đang chia sẻ / đã tắt / offline, bấm "Xem màn hình" để xem trực tiếp (tối đa 4 ô, nhấp đúp để phóng to). Video đi thẳng giữa hai máy trong LAN bằng WebRTC, không qua server. Kiểm thử tự động: `TEACHER_CODE=... TEACHER_PASSWORD=... node scripts/ui-e2e/screen-share.mjs` (cần Google Chrome).
 * Sinh viên: danh sách phiên (đếm ngược theo giờ server), tự tham gia, đề bài, ô soạn code (Tab thụt lề, số dòng, lưu nháp trên máy) hoặc chọn file `.cpp`, kết quả cập nhật trực tiếp (`đang chờ → đang chấm… → 10/15 TLE`), xem lỗi biên dịch, thông báo của GV, nút "Kết thúc làm bài".
 * Mất kết nối WebSocket → hiện "Mất kết nối", tự nối lại (1–10 s) rồi tải lại trạng thái bằng REST. Access token tự làm mới trước khi hết hạn; mỗi tab giữ phiên đăng nhập riêng (đóng tab là đăng xuất).
-* Mã nguồn: `web/static/` (`app.js` router + đăng nhập, `teacher.js`, `student.js`, `live.js` WebSocket, `api.js` REST). Sửa xong: `docker compose up -d --build --no-deps api`.
+* Giao diện toàn màn hình, mặc định tối: mã nguồn React trong `web/src/`, CSS/font/bundle và các module tích hợp trong `web/static/`. Panel đề/editor và editor/kết quả kéo giãn được; kích thước và cỡ chữ editor được lưu trên trình duyệt.
+* Sửa React: `npm ci`, `npm run build`, rồi `docker compose up -d --build --no-deps api`. `npm run dev` mở UI và chuyển tiếp API/WebSocket đến backend thật tại `127.0.0.1:8080`.
+* Xem thử UI độc lập: `npm run preview:ui`, vào `http://127.0.0.1:5173` (sinh viên `SV001/demo`, giáo viên `GV001/demo`). Đây là dữ liệu kiểm thử, không chạy C++ thật. Kiểm thử tự động: `npm run test:ui`.
+* Chi tiết phạm vi, kiến trúc và xác minh: [`docs/FRONTEND_REDESIGN.md`](docs/FRONTEND_REDESIGN.md).
 
-Frontend chính thức (nếu có) nằm ở repo riêng. Công cụ khác để thử backend:
+Công cụ khác để thử backend:
 
 * Swagger UI (`/swagger/index.html`): đăng nhập → Authorize `Bearer <access_token>` → gọi API.
 * `examples/api-manual.http` (REST Client của VS Code / JetBrains).

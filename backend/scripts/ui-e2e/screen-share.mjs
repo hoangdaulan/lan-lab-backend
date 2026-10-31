@@ -52,7 +52,7 @@ try {
     await page.waitFor('document.querySelector("#login-form")');
     await page.eval(`(() => { const f = document.querySelector('#login-form'); f.code.value = ${JSON.stringify(c)};
       f.password.value = ${JSON.stringify(p)}; f.requestSubmit(); })()`);
-    await page.waitFor('document.querySelector("#logout")');
+    await page.waitFor('document.querySelector("#who")');
   };
 
   console.log('== student enters the running session');

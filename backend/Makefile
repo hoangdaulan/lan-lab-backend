@@ -1,4 +1,10 @@
-.PHONY: up down migrate seed build test test-integration test-sandbox smoke experiment backup data
+.PHONY: up down migrate seed build test test-integration test-sandbox smoke experiment backup data ui-build ui-test
+
+ui-build:
+	npm run build
+
+ui-test:
+	npm run test:ui
 
 # ./data is bind-mounted into api and worker; create it before compose does
 # (compose would create it as root).
