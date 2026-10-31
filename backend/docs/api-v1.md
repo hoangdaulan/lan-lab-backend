@@ -47,9 +47,9 @@ Giáo viên đầu tiên: `cmd/seed` (không qua API).
 | Method | Path | Vai trò | Mục đích | Làm |
 |---|---|---|---|---|
 | GET | `/students` | T | Danh sách sinh viên, tìm theo code/tên, phân trang | ✅ |
-| POST | `/students` | T | Tạo 1 sinh viên, mật khẩu mặc định = MSV | ✅ |
-| POST | `/students/import` | T | Import CSV (`code,full_name[,class]`) | ✅ |
-| POST | `/students/{id}/reset-password` | T | Đặt lại mật khẩu về MSV, thu hồi refresh token | ✅ |
+| POST | `/students` | T | Tạo 1 sinh viên, mật khẩu mặc định = ngày sinh `ddmmyyyy` | ✅ |
+| POST | `/students/import` | T | Import CSV (`full_name,code,date_of_birth[,class]`) | ✅ |
+| POST | `/students/{id}/reset-password` | T | Đặt lại mật khẩu về ngày sinh `ddmmyyyy`, thu hồi refresh token | ✅ |
 
 ## 3. Đề và phiên
 
@@ -179,18 +179,20 @@ HS256, ký bằng `JWT_SECRET`. Claims: `sub` (id dạng chuỗi), `role`, `iat`
 
 ## Chi tiết Sinh viên
 
-Mọi route yêu cầu access token của **giáo viên** (403 nếu là sinh viên). `code` được trim + viết hoa; `fullname` được gộp khoảng trắng. Giới hạn: `code` 1–50 ký tự, không chứa khoảng trắng; `fullname` 1–200 ký tự. Mật khẩu ban đầu = `code`.
+Mọi route yêu cầu access token của **giáo viên** (403 nếu là sinh viên). `code` được trim + viết hoa; `fullname` được gộp khoảng trắng. Giới hạn: `code` 1–50 ký tự, không chứa khoảng trắng; `fullname` 1–200 ký tự.
+
+**Ngày sinh và mật khẩu ban đầu.** `date_of_birth` bắt buộc khi tạo/import, nhận `dd/mm/yyyy` (cũng chấp nhận `-` hoặc `.` thay `/`, ngày/tháng 1 chữ số như `5/9/2004`) hoặc ISO `yyyy-mm-dd` (Excel hay xuất kiểu này). Ngày phải có thật, năm ≥ 1900 và không ở tương lai. Mật khẩu ban đầu = ngày sinh dạng **`ddmmyyyy`**, ví dụ `05/09/2004` → `05092004`. Tên đăng nhập là `code` (MSV, viết hoa). Sinh viên tạo trước khi có cột này có `date_of_birth: null` và mật khẩu ban đầu vẫn là `code`.
 
 Đối tượng sinh viên:
 
 ```json
-{"id": 2, "code": "B21DCCN001", "fullname": "Nguyen Van A",
+{"id": 2, "code": "B21DCCN001", "fullname": "Nguyen Van A", "date_of_birth": "2004-09-05",
  "created_at": "2026-10-21T09:00:00Z", "updated_at": "2026-10-21T09:00:00Z"}
 ```
 
 ### `POST /students`
 
-Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã thuộc một tài khoản khác (kể cả giáo viên).
+Request `{"code": "b21dccn001", "fullname": "Nguyen Van A", "date_of_birth": "05/09/2004"}` → 201 + đối tượng sinh viên. 400 nếu không hợp lệ, 409 nếu `code` đã thuộc một tài khoản khác (kể cả giáo viên).
 
 ### `GET /students?query=&page=1&pageSize=20`
 
@@ -204,12 +206,18 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 
 `multipart/form-data`, trường `file` là CSV UTF-8 (cho phép BOM của Excel), tối đa 1 MiB / 1000 dòng.
 
-- Dòng đầu là header, phải có cột `code` và `full_name` (hoặc `fullname`); thứ tự cột tùy ý. Cột khác (ví dụ `class`) bị bỏ qua vì bảng `students` không có cột lớp.
-- **Dòng lỗi** (thiếu/quá dài, `code` lặp lại trong cùng file): từ chối cả file, **không lưu gì**, trả 400:
+- Dòng đầu là header với 3 cột bắt buộc, thứ tự chuẩn **`full_name,code,date_of_birth`** (họ tên, MSV, ngày sinh). Tên cột thay thế: `fullname`, `dob`. Server đọc theo tên cột nên đổi thứ tự cũng được. Cột khác (ví dụ `class`) bị bỏ qua vì bảng `users` không có cột lớp. Mẫu: `examples/students-import.csv`.
+
+```csv
+full_name,code,date_of_birth
+Nguyễn Văn An,B21DCCN001,05/09/2004
+```
+
+- **Dòng lỗi** (thiếu/quá dài, **thiếu hoặc sai ngày sinh**, `code` lặp lại trong cùng file): từ chối cả file, **không lưu gì**, trả 400:
 
 ```json
 {"error": "import rejected, nothing was saved: 2 invalid row(s)",
- "row_errors": [{"line": 3, "code": "SV02", "error": "fullname is required"},
+ "row_errors": [{"line": 3, "code": "SV02", "error": "date_of_birth is required"},
                 {"line": 4, "code": "SV01", "error": "duplicate of line 2 in this file"}]}
 ```
 
@@ -224,7 +232,7 @@ Request `{"code": "b21dccn001", "fullname": "Nguyen Van A"}` → 201 + đối t�
 
 ### `POST /students/{id}/reset-password`
 
-204. Mật khẩu về lại `code`; xóa mọi refresh token của sinh viên. Access token đã cấp còn hiệu lực tới hết hạn (≤ 15 phút). 404 nếu không có sinh viên.
+204. Mật khẩu về lại ngày sinh `ddmmyyyy` (hoặc `code` nếu sinh viên không có ngày sinh); xóa mọi refresh token của sinh viên. Access token đã cấp còn hiệu lực tới hết hạn (≤ 15 phút). 404 nếu không có sinh viên.
 
 ## Chi tiết Đề, phiên và problem
 

@@ -34,16 +34,17 @@ async function studentsPage(root) {
         <form class="inline" id="add">
           <label>MSV<input name="code" required></label>
           <label>Họ tên<input name="fullname" required></label>
+          <label>Ngày sinh<input name="date_of_birth" placeholder="dd/mm/yyyy" required></label>
           <button class="primary">Thêm</button>
         </form>
-        <p class="muted small">Mật khẩu ban đầu = MSV.</p>
+        <p class="muted small">Mật khẩu ban đầu = ngày sinh dạng ddmmyyyy (05/09/2004 → 05092004).</p>
       </div>
       <div class="panel"><h3>Import CSV</h3>
         <form class="inline" id="imp">
           <input type="file" name="file" accept=".csv,text/csv" required>
           <button class="primary">Import</button>
         </form>
-        <p class="muted small">Dòng đầu: <code>code,full_name</code>. Có dòng lỗi thì không lưu gì; MSV đã có thì bỏ qua.</p>
+        <p class="muted small">Dòng đầu: <code>full_name,code,date_of_birth</code>, ngày sinh dạng dd/mm/yyyy. Có dòng lỗi (kể cả thiếu ngày sinh) thì không lưu gì; MSV đã có thì bỏ qua.</p>
         <div id="imp-result"></div>
       </div>
     </div>
@@ -55,18 +56,18 @@ async function studentsPage(root) {
   const load = async () => {
     const list = await get('/students', { query, page, pageSize: 50 });
     const box = $('#list');
-    mount(box, html`<table><tr><th>MSV</th><th>Họ tên</th><th>Tạo lúc</th><th></th></tr>
-      ${list.data.map((s) => html`<tr><td>${s.code}</td><td>${s.fullname}</td><td class="small">${fmtTime(s.created_at)}</td>
+    mount(box, html`<table><tr><th>MSV</th><th>Họ tên</th><th>Ngày sinh</th><th>Tạo lúc</th><th></th></tr>
+      ${list.data.map((s) => html`<tr><td>${s.code}</td><td>${s.fullname}</td><td>${fmtDOB(s.date_of_birth)}</td><td class="small">${fmtTime(s.created_at)}</td>
         <td><button data-reset="${s.id}" data-code="${s.code}">Đặt lại mật khẩu</button></td></tr>`)}
-      ${list.data.length ? '' : html`<tr><td colspan="4" class="muted">Không có sinh viên</td></tr>`}</table>`);
+      ${list.data.length ? '' : html`<tr><td colspan="5" class="muted">Không có sinh viên</td></tr>`}</table>`);
     box.append(pager(list, (p) => { page = p; load().catch(showError); }));
   };
 
   $('#search').onsubmit = (e) => { e.preventDefault(); query = e.target.q.value.trim(); page = 1; load().catch(showError); };
   $('#list').onclick = (e) => {
     const b = e.target.closest('[data-reset]');
-    if (!b || !confirm(`Đặt lại mật khẩu của ${b.dataset.code} về MSV?`)) return;
-    busy(b, async () => { await post(`/students/${b.dataset.reset}/reset-password`); toast('Đã đặt lại mật khẩu về MSV', 'ok'); });
+    if (!b || !confirm(`Đặt lại mật khẩu của ${b.dataset.code} về ngày sinh (ddmmyyyy)?`)) return;
+    busy(b, async () => { await post(`/students/${b.dataset.reset}/reset-password`); toast('Đã đặt lại mật khẩu về ngày sinh', 'ok'); });
   };
   $('#add').onsubmit = (e) => {
     e.preventDefault();
@@ -126,6 +127,11 @@ async function examsPage(root) {
       location.hash = `#/exams/${ex.id}`;
     });
   };
+}
+
+// date_of_birth comes as yyyy-mm-dd (null for students created before it existed).
+function fmtDOB(d) {
+  return d ? d.split('-').reverse().join('/') : '—';
 }
 
 function rowLinks(root) {

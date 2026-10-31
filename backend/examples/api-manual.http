@@ -31,7 +31,7 @@ POST {{base}}/students
 Authorization: Bearer {{teacherToken}}
 Content-Type: application/json
 
-{"code":"TESTSV006","fullname":"Đỗ Minh Khôi"}
+{"code":"TESTSV006","fullname":"Đỗ Minh Khôi","date_of_birth":"20/11/2004"}
 
 ### 5. Import 5 SV: 200. Trong Postman dung form-data, key file, type File
 POST {{base}}/students/import

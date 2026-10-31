@@ -12,7 +12,7 @@ import (
 func TestListHandlerUsesMesgoPaginationAndQuery(t *testing.T) {
 	svc := NewService(newFakeRepo(), fakeHasher{})
 	for _, code := range []string{"SV01", "SV02", "SV03", "XX01"} {
-		if _, err := svc.Create(context.Background(), code, "Student "+code); err != nil {
+		if _, err := svc.Create(context.Background(), code, "Student "+code, testDOB); err != nil {
 			t.Fatal(err)
 		}
 	}

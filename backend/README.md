@@ -88,7 +88,7 @@ File mã nguồn và file test nằm ở `./data` trên máy chủ (bind mount),
 | Function | Description | Status |
 | -------- | ----------- | ------ |
 | Auth | Đăng nhập `{code, password}`, JWT HS256 15 phút, refresh token 7 ngày xoay vòng | Done |
-| Quản lý sinh viên | Tạo, import CSV, tìm kiếm, đặt lại mật khẩu về MSV | Done |
+| Quản lý sinh viên | Tạo, import CSV (họ tên, MSV, ngày sinh), tìm kiếm, đặt lại mật khẩu về ngày sinh | Done |
 | Đề / phiên | Tạo, sửa, xóa; SV tham gia trong khung giờ, kết thúc làm bài | Done |
 | Problem / test | Test `N.in/N.out` trên server, nút "Chấm lại" đồng bộ test + tăng version | Done |
 | Nộp bài | Multipart `.cpp` ≤ 64 KB, kiểm tra giờ/trạng thái trong transaction, trả 202 | Done |

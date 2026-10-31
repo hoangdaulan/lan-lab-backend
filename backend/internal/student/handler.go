@@ -30,15 +30,22 @@ func (h *Handler) Register(r chi.Router) {
 }
 
 type studentResponse struct {
-	ID        int64     `json:"id"`
-	Code      string    `json:"code"`
-	Fullname  string    `json:"fullname"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID       int64  `json:"id"`
+	Code     string `json:"code"`
+	Fullname string `json:"fullname"`
+	// DateOfBirth is yyyy-mm-dd, or null for a student created before it existed.
+	DateOfBirth *string   `json:"date_of_birth"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toResponse(s Student) studentResponse {
-	return studentResponse{ID: s.ID, Code: s.Code, Fullname: s.Fullname, CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC()}
+	resp := studentResponse{ID: s.ID, Code: s.Code, Fullname: s.Fullname, CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC()}
+	if s.DateOfBirth != nil {
+		d := s.DateOfBirth.Format(time.DateOnly)
+		resp.DateOfBirth = &d
+	}
+	return resp
 }
 
 func toResponses(in []Student) []studentResponse {
@@ -65,14 +72,15 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Code     string `json:"code"`
-		Fullname string `json:"fullname"`
+		Code        string `json:"code"`
+		Fullname    string `json:"fullname"`
+		DateOfBirth string `json:"date_of_birth"`
 	}
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s, err := h.svc.Create(r.Context(), req.Code, req.Fullname)
+	s, err := h.svc.Create(r.Context(), req.Code, req.Fullname, req.DateOfBirth)
 	if err != nil {
 		h.writeError(w, err)
 		return

@@ -19,15 +19,15 @@ SEED_TEACHER_CODE=GV01 SEED_TEACHER_FULLNAME="Giao vien" SEED_TEACHER_PASSWORD='
 TEACHER_CODE=GV01 TEACHER_PASSWORD='<mật khẩu>' scripts/demo-setup.sh
 ```
 
-`demo-setup.sh` in ra `session_id`, `problem_A` (a+b, 15 test), `problem_B` (tổng 1..n, giới hạn 200 ms — vòng lặp ngây thơ bị TLE) và tạo SV `DEMO01..DEMO05` (mật khẩu = mã).
+`demo-setup.sh` in ra `session_id`, `problem_A` (a+b, 15 test), `problem_B` (tổng 1..n, giới hạn 200 ms — vòng lặp ngây thơ bị TLE) và tạo SV `DEMO01..DEMO05` (ngày sinh 01/01/2004, mật khẩu = `01012004`).
 
 Màn hình nên mở sẵn (giao diện web: `https://<IP>:8443/`, chấp nhận cảnh báo chứng chỉ tự ký một lần):
-0. Trình duyệt GV: đăng nhập → Đề thi → mở phiên → tab "Bảng trực tiếp". Trình duyệt SV (máy khác, hoặc tab ẩn danh): đăng nhập `DEMO01`/`DEMO01` → Phiên thi → "Vào làm bài". Các bước 2–7 bên dưới làm được hoàn toàn trên giao diện web (nộp bằng ô soạn code; thông báo ở tab "Thông báo"; chấm lại bằng nút "Quét test & chấm lại" ở trang đề).
+0. Trình duyệt GV: đăng nhập → Đề thi → mở phiên → tab "Bảng trực tiếp". Trình duyệt SV (máy khác, hoặc tab ẩn danh): đăng nhập `DEMO01`/`01012004` → Phiên thi → "Vào làm bài". Các bước 2–7 bên dưới làm được hoàn toàn trên giao diện web (nộp bằng ô soạn code; thông báo ở tab "Thông báo"; chấm lại bằng nút "Quét test & chấm lại" ở trang đề).
 1. Swagger UI: `http://<IP>:8080/swagger/index.html` (đăng nhập GV, Authorize).
 2. Terminal GV — bảng trực tiếp qua WebSocket:
    `WSPROBE_PASSWORD='<mật khẩu>' go run ./cmd/wsprobe -base http://<IP>:8080 -code GV01 -session <session_id> -duration 30m`
 3. Terminal SV (máy khác trong LAN nếu có):
-   `go run ./cmd/wsprobe -base http://<IP>:8080 -code DEMO01 -password DEMO01 -session <session_id> -duration 30m`
+   `go run ./cmd/wsprobe -base http://<IP>:8080 -code DEMO01 -password 01012004 -session <session_id> -duration 30m`
 
 ## Các bước
 

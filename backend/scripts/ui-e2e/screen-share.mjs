@@ -35,7 +35,7 @@ const login = async (code, password) => (await fetch(API + '/auth/login', {
 // ---- data
 const tt = await login(TEACHER_CODE, TEACHER_PASSWORD);
 const code = 'E2ESV' + Date.now().toString().slice(-6);
-await call('POST', '/students', tt, { code, fullname: 'Sinh vien E2E' });
+await call('POST', '/students', tt, { code, fullname: 'Sinh vien E2E', date_of_birth: '01/01/2004' });
 const exam = await call('POST', '/exams', tt, { title: 'E2E screen share', description: 'temporary' });
 const now = Date.now();
 const ses = await call('POST', `/exams/${exam.id}/sessions`, tt, {
@@ -57,7 +57,7 @@ try {
 
   console.log('== student enters the running session');
   const sv = await browser.newPage();
-  await uiLogin(sv, code, code);
+  await uiLogin(sv, code, '01012004');
   await sv.eval(`location.hash = '#/sessions/${ses.id}'`);
   await sv.waitFor('document.querySelector(".lock")');
   check('room is locked until the screen is shared', await sv.eval('!document.querySelector(".lock").hidden'));

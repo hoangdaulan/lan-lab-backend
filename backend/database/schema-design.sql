@@ -17,6 +17,9 @@ CREATE TABLE users (
     fullname varchar(200) NOT NULL CHECK (btrim(fullname) <> ''),
     role varchar(10) NOT NULL CHECK (role IN ('teacher', 'student')),
     password_hash text NOT NULL,
+    -- Chi sinh vien co; NULL voi giao vien va sinh vien tao truoc 31/10/2026
+    -- (migration 00002). Mat khau ban dau cua sinh vien = ngay sinh ddmmyyyy.
+    date_of_birth date,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -19,11 +19,11 @@ func NewRepository(pool *pgxpool.Pool) Repository {
 	return &pgRepository{pool: pool}
 }
 
-const studentColumns = `id, code, fullname, created_at, updated_at`
+const studentColumns = `id, code, fullname, date_of_birth, created_at, updated_at`
 
 func scanStudent(row pgx.Row) (Student, error) {
 	var s Student
-	err := row.Scan(&s.ID, &s.Code, &s.Fullname, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Code, &s.Fullname, &s.DateOfBirth, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Student{}, ErrNotFound
 	}
@@ -32,11 +32,11 @@ func scanStudent(row pgx.Row) (Student, error) {
 
 // Codes are unique across all users, so a code held by a teacher also
 // conflicts.
-const insertStudent = `INSERT INTO users (code, fullname, role, password_hash) VALUES ($1, $2, 'student', $3)
+const insertStudent = `INSERT INTO users (code, fullname, role, password_hash, date_of_birth) VALUES ($1, $2, 'student', $3, $4)
 	ON CONFLICT (code) DO NOTHING RETURNING ` + studentColumns
 
 func (r *pgRepository) Create(ctx context.Context, n NewStudent) (Student, error) {
-	s, err := scanStudent(r.pool.QueryRow(ctx, insertStudent, n.Code, n.Fullname, n.PasswordHash))
+	s, err := scanStudent(r.pool.QueryRow(ctx, insertStudent, n.Code, n.Fullname, n.PasswordHash, n.DateOfBirth))
 	if errors.Is(err, ErrNotFound) {
 		return Student{}, ErrAlreadyExists
 	}
@@ -81,7 +81,7 @@ func (r *pgRepository) Import(ctx context.Context, in []NewStudent) ([]Student, 
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		created, skipped = nil, nil
 		for _, n := range in {
-			s, err := scanStudent(tx.QueryRow(ctx, insertStudent, n.Code, n.Fullname, n.PasswordHash))
+			s, err := scanStudent(tx.QueryRow(ctx, insertStudent, n.Code, n.Fullname, n.PasswordHash, n.DateOfBirth))
 			if errors.Is(err, ErrNotFound) {
 				ex := ExistingCode{Code: n.Code}
 				if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE code = $1`, n.Code).Scan(&ex.Role); err != nil {

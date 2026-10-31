@@ -85,8 +85,11 @@ login() { # login CODE PASSWORD -> prints access token
 
 teacher_token() { login "$TEACHER_CODE" "$TEACHER_PASSWORD"; }
 
+# Students are created with this date of birth; the initial password is it as ddmmyyyy.
+SV_DOB="05/09/2004" SV_PASS="05092004"
+
 new_student() { # new_student CODE TEACHER_TOKEN -> prints id
-	req POST /students "{\"code\":\"$1\",\"fullname\":\"Smoke $1\"}" "$2"
+	req POST /students "{\"code\":\"$1\",\"fullname\":\"Smoke $1\",\"date_of_birth\":\"$SV_DOB\"}" "$2"
 	jget 'd["id"]'
 }
 
@@ -145,13 +148,13 @@ PY
 
 	local code="SMK${RUN}AU" st srt
 	new_student "$code" "$at" >/dev/null
-	req POST /auth/login "{\"code\":\"$code\",\"password\":\"$code\"}"
-	expect "student login with MSV" 200 'd["user"]["role"] == "student"'
+	req POST /auth/login "{\"code\":\"$code\",\"password\":\"$SV_PASS\"}"
+	expect "student login with date of birth" 200 'd["user"]["role"] == "student"'
 	st=$(jget 'd["access_token"]')
 	srt=$(jget 'd["refresh_token"]')
 	req PUT /me/password '{"current_password":"bad","new_password":"x"}' "$st"
 	expect "change password, wrong current" 401
-	req PUT /me/password "{\"current_password\":\"$code\",\"new_password\":\"new-$RUN\"}" "$st"
+	req PUT /me/password "{\"current_password\":\"$SV_PASS\",\"new_password\":\"new-$RUN\"}" "$st"
 	expect "change password" 204
 	req POST /auth/refresh "{\"refresh_token\":\"$srt\"}"
 	expect "refresh tokens revoked by password change" 401
@@ -168,22 +171,24 @@ section_students() {
 	local tt
 	tt=$(teacher_token)
 	local a="SMK${RUN}A" b="SMK${RUN}B" c="SMK${RUN}C"
-	req POST /students "{\"code\":\" ${a,,} \",\"fullname\":\"Nguyen   Van  A\"}" "$tt"
-	expect "create student normalizes" 201 'd["code"] == "'"$a"'" and d["fullname"] == "Nguyen Van A"'
-	req POST /students "{\"code\":\"$a\",\"fullname\":\"X\"}" "$tt"
+	req POST /students "{\"code\":\" ${a,,} \",\"fullname\":\"Nguyen   Van  A\",\"date_of_birth\":\"5/9/2004\"}" "$tt"
+	expect "create student normalizes" 201 'd["code"] == "'"$a"'" and d["fullname"] == "Nguyen Van A" and d["date_of_birth"] == "2004-09-05"'
+	req POST /students "{\"code\":\"$a\",\"fullname\":\"X\",\"date_of_birth\":\"$SV_DOB\"}" "$tt"
 	expect "duplicate student code" 409
-	req POST /students "{\"code\":\"$TEACHER_CODE\",\"fullname\":\"X\"}" "$tt"
+	req POST /students "{\"code\":\"$TEACHER_CODE\",\"fullname\":\"X\",\"date_of_birth\":\"$SV_DOB\"}" "$tt"
 	expect "student with teacher code" 409
-	req POST /students '{"code":"A B","fullname":"X"}' "$tt"
+	req POST /students "{\"code\":\"A B\",\"fullname\":\"X\",\"date_of_birth\":\"$SV_DOB\"}" "$tt"
 	expect "code with space" 400
+	req POST /students "{\"code\":\"${c}N\",\"fullname\":\"X\"}" "$tt"
+	expect "student without date of birth" 400
 
-	printf 'code,full_name\n%s,Pham D\n%s,\n%s,Dup\n' "${b}X" "${c}X" "${b,,}x" >"$TMP/bad.csv"
+	printf 'full_name,code,date_of_birth\nPham D,%s,01/01/2004\nNo Name,%s,\nDup,%s,01/01/2004\n' "${b}X" "${c}X" "${b,,}x" >"$TMP/bad.csv"
 	upload /students/import "$TMP/bad.csv" "$tt"
-	expect "bad CSV rejected with row errors" 400 '[r["line"] for r in d["row_errors"]] == [3, 4]'
+	expect "bad CSV rejected with row errors" 400 '[r["line"] for r in d["row_errors"]] == [3, 4] and d["row_errors"][0]["error"] == "date_of_birth is required"'
 	req GET "/students?query=${b}X" "" "$tt"
 	expect "bad CSV saved nothing" 200 'd["data"] == [] and d["totalPages"] == 0'
 
-	printf '\xef\xbb\xbfcode,full_name,class\n%s,Tran Thi B,D21\n%s,Again,D21\n%s,"Le, Van C",D21\n%s,Teacher,D21\n' "$b" "$a" "$c" "$TEACHER_CODE" >"$TMP/ok.csv"
+	printf '\xef\xbb\xbffull_name,code,date_of_birth,class\nTran Thi B,%s,%s,D21\nAgain,%s,%s,D21\n"Le, Van C",%s,%s,D21\nTeacher,%s,%s,D21\n' "$b" "$SV_DOB" "$a" "$SV_DOB" "$c" "$SV_DOB" "$TEACHER_CODE" "$SV_DOB" >"$TMP/ok.csv"
 	upload /students/import "$TMP/ok.csv" "$tt"
 	expect "import skips existing + teacher codes" 200 'd["created_count"] == 2 and [(s["line"], s["reason"]) for s in d["skipped"]] == [(3, "already exists"), (5, "code belongs to a teacher account")]'
 
@@ -192,22 +197,22 @@ section_students() {
 	req GET "/students?query=$TEACHER_CODE" "" "$tt"
 	expect "teachers never listed as students" 200 'all(s["code"] != "'"${TEACHER_CODE^^}"'" for s in d["data"])'
 
-	req POST /auth/login "{\"code\":\"$b\",\"password\":\"$b\"}"
-	expect "imported student logs in with MSV" 200
+	req POST /auth/login "{\"code\":\"$b\",\"password\":\"$SV_PASS\"}"
+	expect "imported student logs in with date of birth" 200
 	local st srt sid
 	st=$(jget 'd["access_token"]')
 	sid=$(jget 'd["user"]["id"]')
 	req GET /students "" "$st"
 	expect "student cannot manage students" 403
-	req PUT /me/password "{\"current_password\":\"$b\",\"new_password\":\"changed-$RUN\"}" "$st"
+	req PUT /me/password "{\"current_password\":\"$SV_PASS\",\"new_password\":\"changed-$RUN\"}" "$st"
 	req POST /auth/login "{\"code\":\"$b\",\"password\":\"changed-$RUN\"}"
 	srt=$(jget 'd["refresh_token"]')
 	req POST "/students/$sid/reset-password" "" "$tt"
 	expect "reset password" 204
 	req POST /auth/refresh "{\"refresh_token\":\"$srt\"}"
 	expect "reset revokes refresh tokens" 401
-	req POST /auth/login "{\"code\":\"$b\",\"password\":\"$b\"}"
-	expect "login with MSV after reset" 200
+	req POST /auth/login "{\"code\":\"$b\",\"password\":\"$SV_PASS\"}"
+	expect "login with date of birth after reset" 200
 	req GET /me "" "$tt"
 	local tid
 	tid=$(jget 'd["id"]')
@@ -220,7 +225,7 @@ section_exams() {
 	local tt st code="SMK${RUN}E"
 	tt=$(teacher_token)
 	new_student "$code" "$tt" >/dev/null
-	st=$(login "$code" "$code")
+	st=$(login "$code" "$SV_PASS")
 	make_exam "$tt"
 	req GET "/exams/$EXAM_ID" "" "$tt"
 	expect "get exam" 200
@@ -282,7 +287,7 @@ section_problems() {
 	local tt st code="SMK${RUN}P"
 	tt=$(teacher_token)
 	new_student "$code" "$tt" >/dev/null
-	st=$(login "$code" "$code")
+	st=$(login "$code" "$SV_PASS")
 	make_exam "$tt"
 	req POST "/exams/$EXAM_ID/problems" '{"code":" a ","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
 	expect "create problem" 201 'd["code"] == "A" and d["version"] == 1'
@@ -356,8 +361,8 @@ section_submissions() {
 	tt=$(teacher_token)
 	new_student "$a" "$tt" >/dev/null
 	new_student "$b" "$tt" >/dev/null
-	st=$(login "$a" "$a")
-	st2=$(login "$b" "$b")
+	st=$(login "$a" "$SV_PASS")
+	st2=$(login "$b" "$SV_PASS")
 	make_exam "$tt"
 	local pid empty_pid
 	pid=$(make_problem "$tt" A)
@@ -444,7 +449,7 @@ section_submissions() {
 	for i in $(seq 1 16); do
 		local code="SMK${RUN}R$i" tok
 		new_student "$code" "$tt" >/dev/null
-		tok=$(login "$code" "$code")
+		tok=$(login "$code" "$SV_PASS")
 		req POST "/sessions/$RUNNING_ID/join" "" "$tok"
 		curl -s -o "$TMP/race-sub-$i" -w '%{http_code}' -H "Authorization: Bearer $tok" -F "file=@$TMP/ok.cpp" \
 			"$API/sessions/$RUNNING_ID/problems/$pid/submissions" >"$TMP/race-sub-code-$i" &
@@ -487,7 +492,7 @@ section_judge() {
 	local tt st code="SMK${RUN}J"
 	tt=$(teacher_token)
 	new_student "$code" "$tt" >/dev/null
-	st=$(login "$code" "$code")
+	st=$(login "$code" "$SV_PASS")
 	make_exam "$tt"
 	req POST "/exams/$EXAM_ID/problems" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
 	local pid dir
@@ -539,8 +544,8 @@ section_rejudge() {
 	tt=$(teacher_token)
 	new_student "$a" "$tt" >/dev/null
 	new_student "$b" "$tt" >/dev/null
-	s1=$(login "$a" "$a")
-	s2=$(login "$b" "$b")
+	s1=$(login "$a" "$SV_PASS")
+	s2=$(login "$b" "$SV_PASS")
 	make_exam "$tt"
 	req POST "/exams/$EXAM_ID/problems" '{"code":"A","title":"Sum","statement":"a+b","time_limit_ms":1000,"memory_limit_mb":256}' "$tt"
 	local pid dir
@@ -624,12 +629,12 @@ section_ws() {
 	tt=$(teacher_token)
 	new_student "$a" "$tt" >/dev/null
 	new_student "$b" "$tt" >/dev/null
-	s1=$(login "$a" "$a")
+	s1=$(login "$a" "$SV_PASS")
 	make_exam "$tt"
 	local pid
 	pid=$(make_problem "$tt" A)
 	req POST "/sessions/$RUNNING_ID/join" "" "$s1"
-	req POST "/sessions/$RUNNING_ID/join" "" "$(login "$b" "$b")"
+	req POST "/sessions/$RUNNING_ID/join" "" "$(login "$b" "$SV_PASS")"
 
 	STATUS=$(handshake "http://evil.example")
 	BODY='{}'
@@ -638,9 +643,9 @@ section_ws() {
 	STATUS=$(handshake "http://$host")
 	expect "same Origin upgrades" 101
 
-	"$probe" -base "$BASE" -code "$a" -password "$a" -session "$RUNNING_ID" -duration 25s >"$TMP/w1.log" 2>&1 &
+	"$probe" -base "$BASE" -code "$a" -password "$SV_PASS" -session "$RUNNING_ID" -duration 25s >"$TMP/w1.log" 2>&1 &
 	local p1=$!
-	"$probe" -base "$BASE" -code "$b" -password "$b" -session "$RUNNING_ID" -duration 25s >"$TMP/w2.log" 2>&1 &
+	"$probe" -base "$BASE" -code "$b" -password "$SV_PASS" -session "$RUNNING_ID" -duration 25s >"$TMP/w2.log" 2>&1 &
 	local p2=$!
 	WSPROBE_PASSWORD=$TEACHER_PASSWORD "$probe" -base "$BASE" -code "$TEACHER_CODE" -session "$RUNNING_ID" -duration 25s >"$TMP/wt.log" 2>&1 &
 	local pt=$!
@@ -709,8 +714,8 @@ section_summary() {
 	tt=$(teacher_token)
 	new_student "$a" "$tt" >/dev/null
 	new_student "$b" "$tt" >/dev/null
-	s1=$(login "$a" "$a")
-	s2=$(login "$b" "$b")
+	s1=$(login "$a" "$SV_PASS")
+	s2=$(login "$b" "$SV_PASS")
 	make_exam "$tt"
 	local pa pb
 	pa=$(make_problem "$tt" A)

@@ -175,6 +175,12 @@ func multipartFile(field, name string, content []byte) (string, []byte) {
 	return w.FormDataContentType(), buf.Bytes()
 }
 
+// Load-test students share one date of birth; the initial password is it as ddmmyyyy.
+const (
+	loadStudentDOB      = "01/01/2004"
+	loadStudentPassword = "01012004"
+)
+
 const program = `#include <cstdio>
 int main(){long long a,b;if(scanf("%lld %lld",&a,&b)!=2)return 0;printf("%lld\n",a+b);}
 `
@@ -271,11 +277,11 @@ func run(c config) (result, error) {
 		return res, err
 	}
 	var csv strings.Builder
-	csv.WriteString("code,full_name\n")
+	csv.WriteString("full_name,code,date_of_birth\n")
 	codes := make([]string, c.students)
 	for i := range codes {
 		codes[i] = fmt.Sprintf("LT%s%03d", runID, i)
-		fmt.Fprintf(&csv, "%s,Load Student %d\n", codes[i], i)
+		fmt.Fprintf(&csv, "Load Student %d,%s,%s\n", i, codes[i], loadStudentDOB)
 	}
 	ct, body := multipartFile("file", "students.csv", []byte(csv.String()))
 	if _, err := setup.do("POST", "/students/import", tt, ct, body, nil); err != nil {
@@ -287,7 +293,7 @@ func run(c config) (result, error) {
 	loginLat := make([]time.Duration, c.students)
 	if err := parallel(c.students, func(i int) error {
 		start := time.Now()
-		tok, err := st.login(codes[i], codes[i])
+		tok, err := st.login(codes[i], loadStudentPassword)
 		loginLat[i] = time.Since(start)
 		tokens[i] = tok
 		if err != nil {

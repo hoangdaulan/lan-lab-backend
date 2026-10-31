@@ -2,7 +2,7 @@
 # Prepare demo data on the running stack (docs/DEMO.md): one exam with a
 # session running for 2 hours, problem A (a+b, 15 tests) and problem B
 # (sum 1..n, n up to 10^9, 200 ms — a naive loop gets TLE), and students DEMO01..05
-# (password = code). Prints the ids to use in the demo.
+# (password = date of birth 01/01/2004 as ddmmyyyy: 01012004). Prints the ids to use in the demo.
 #
 #   TEACHER_CODE=GV01 TEACHER_PASSWORD=... scripts/demo-setup.sh
 set -euo pipefail
@@ -50,8 +50,8 @@ PY
 post "/problems/$PB_ID/rejudge" '' >/dev/null
 
 csv=$(mktemp)
-printf 'code,full_name\n' >"$csv"
-for i in 1 2 3 4 5; do printf 'DEMO0%d,Sinh vien Demo %d\n' "$i" "$i" >>"$csv"; done
+printf 'full_name,code,date_of_birth\n' >"$csv"
+for i in 1 2 3 4 5; do printf 'Sinh vien Demo %d,DEMO0%d,01/01/2004\n' "$i" "$i" >>"$csv"; done
 curl -sf -X POST "$API/students/import" -H "Authorization: Bearer $TT" -F "file=@$csv" >/dev/null
 rm -f "$csv"
 
@@ -60,5 +60,5 @@ exam_id=$EXAM
 session_id=$SESSION
 problem_A=$PA_ID   tests: $DATA/problems/$PA_ID/tests
 problem_B=$PB_ID   tests: $DATA/problems/$PB_ID/tests
-students: DEMO01..DEMO05 (password = code)
+students: DEMO01..DEMO05 (password = 01012004)
 EOF

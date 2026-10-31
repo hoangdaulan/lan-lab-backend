@@ -52,7 +52,7 @@ Máy đã trao đổi: laptop i3 thế hệ 10, RAM 12 GB. Chưa xác minh model
 
 - Có hai loại tài khoản: giáo viên và sinh viên.
 - Cả hai dùng trường **`code`** làm định danh đăng nhập và **`fullname`** làm họ tên.
-- Sinh viên: `code` là MSV. Mật khẩu mặc định bằng MSV, **chỉ lưu hash**. Được đổi mật khẩu, không bắt buộc đổi lần đầu.
+- Sinh viên: `code` là MSV. Mật khẩu mặc định là ngày sinh dạng `ddmmyyyy` (05/09/2004 → `05092004`), **chỉ lưu hash**. Sinh viên tạo trước khi có cột `date_of_birth` (31/10/2026) vẫn dùng MSV làm mật khẩu mặc định. Được đổi mật khẩu, không bắt buộc đổi lần đầu.
 - Giáo viên đăng nhập bằng mã giáo viên và mật khẩu. Cách cấp tài khoản/mật khẩu ban đầu chưa chốt.
 - Không có `username`, `is_active` hoặc `must_change_password`.
 - **[Đã thay thế 22/10/2026, xem mục 18]** Tầng Go có thể dùng kiểu `User` chung cho các trường chung; DB vẫn có **hai bảng `teachers`, `students`**. Không có bảng `users` hoặc kế thừa bảng PostgreSQL.
@@ -332,7 +332,7 @@ Người dùng duyệt các quyết định dưới đây. Danh sách endpoint c
 
 ### Tài khoản và phiên
 
-- Giáo viên đầu tiên tạo bằng `cmd/seed` đọc biến môi trường. Sinh viên được giáo viên tạo qua API (từng người hoặc import CSV), mật khẩu mặc định = MSV.
+- Giáo viên đầu tiên tạo bằng `cmd/seed` đọc biến môi trường. Sinh viên được giáo viên tạo qua API (từng người hoặc import CSV gồm họ tên, MSV, ngày sinh), mật khẩu mặc định = ngày sinh `ddmmyyyy`.
 - Mọi sinh viên thấy mọi phiên; chỉ tham gia được trong khung giờ phiên. Không có danh sách gán trước hay mã truy cập.
 - Sinh viên không xem đề trước `starts_at`; chỉ thấy verdict tổng + passed/total, **không** thấy kết quả từng test; không xem tổng hợp của sinh viên khác.
 
@@ -373,7 +373,7 @@ Các lựa chọn dưới đây do agent đề xuất khi triển khai, **cần 
 
 Người dùng quyết định ("gộp đi") gộp `teachers` và `students` thành **một bảng `users`**. Thay các quyết định ở mục 4 (hai bảng, `code` duy nhất trong từng bảng) và mục 17 (login có `role` trong body).
 
-- `users(id, code UNIQUE, fullname, role CHECK IN ('teacher','student'), password_hash, created_at, updated_at)`; giữ nguyên ràng buộc cũ của `code`/`fullname`. Tên cột họ tên vẫn là `fullname` như các API hiện có.
+- `users(id, code UNIQUE, fullname, role CHECK IN ('teacher','student'), password_hash, date_of_birth NULL, created_at, updated_at)`; giữ nguyên ràng buộc cũ của `code`/`fullname`. Tên cột họ tên vẫn là `fullname` như các API hiện có.
 - `code` **duy nhất trên toàn bộ tài khoản**: tạo sinh viên trùng mã giáo viên → 409; import CSV bỏ qua dòng đó với lý do `code belongs to a teacher account`.
 - Login: `POST /api/v1/auth/login {code, password}`. Vai trò đọc từ `users.role` và ghi vào claim `role` của JWT.
 - FK đổi đích: `exams.teacher_id → users`, `exam_participants.student_id → users`; `refresh_tokens` chỉ còn `user_id NOT NULL` (bỏ `teacher_id`/`student_id` và CHECK chọn một). Index mới: `users_role_code_idx (role, code)`, `refresh_tokens_user_idx (user_id)` (thay hai index refresh token cũ) — vẫn 13 index bổ sung.

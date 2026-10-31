@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // Repository is the persistence boundary for students.
@@ -41,17 +42,22 @@ func NewService(repo Repository, hasher PasswordHasher) *Service {
 	return &Service{repo: repo, hasher: hasher}
 }
 
-// Create adds one student whose initial password is the code (MSV).
-func (s *Service) Create(ctx context.Context, code, fullname string) (Student, error) {
+// Create adds one student whose initial password is the date of birth as
+// ddmmyyyy (see InitialPassword); dateOfBirth is parsed by parseDateOfBirth.
+func (s *Service) Create(ctx context.Context, code, fullname, dateOfBirth string) (Student, error) {
 	code, fullname, err := normalize(code, fullname)
 	if err != nil {
 		return Student{}, err
 	}
-	hash, err := s.hasher.HashPassword(code)
+	dob, err := parseDateOfBirth(dateOfBirth, time.Now())
 	if err != nil {
 		return Student{}, err
 	}
-	return s.repo.Create(ctx, NewStudent{Code: code, Fullname: fullname, PasswordHash: hash})
+	hash, err := s.hasher.HashPassword(InitialPassword(dob))
+	if err != nil {
+		return Student{}, err
+	}
+	return s.repo.Create(ctx, NewStudent{Code: code, Fullname: fullname, DateOfBirth: dob, PasswordHash: hash})
 }
 
 const (
@@ -80,14 +86,19 @@ func (s *Service) List(ctx context.Context, query string, limit, offset int) (Pa
 	return Page{Items: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
-// ResetPassword sets the password back to the student code and revokes all
-// refresh tokens. Access tokens already issued stay valid until they expire.
+// ResetPassword sets the password back to the initial one (date of birth as
+// ddmmyyyy, or the code for a student without a date of birth) and revokes
+// all refresh tokens. Access tokens already issued stay valid until they expire.
 func (s *Service) ResetPassword(ctx context.Context, id int64) error {
 	st, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return err
 	}
-	hash, err := s.hasher.HashPassword(st.Code)
+	password := st.Code
+	if st.DateOfBirth != nil {
+		password = InitialPassword(*st.DateOfBirth)
+	}
+	hash, err := s.hasher.HashPassword(password)
 	if err != nil {
 		return err
 	}
@@ -127,14 +138,16 @@ type ImportResult struct {
 	Skipped []SkippedRow
 }
 
-// Import reads a CSV with a header row containing "code" and "full_name"
-// (or "fullname"); other columns such as "class" are ignored because the
-// users table has no such column.
+// Import reads a CSV with a header row containing "full_name" (or
+// "fullname"), "code" and "date_of_birth" (or "dob"), in any order; the
+// documented order is full_name,code,date_of_birth. Other columns such as
+// "class" are ignored because the users table has no such column.
 //
 // Policy: the import is all-or-nothing for invalid rows (missing/too long
-// fields, a code repeated inside the file) — any such row rejects the whole
-// file with per-row errors. Codes that already exist in the DB are skipped
-// and reported, so re-importing the same roster is safe.
+// fields, a missing or malformed date of birth, a code repeated inside the
+// file) — any such row rejects the whole file with per-row errors. Codes
+// that already exist in the DB are skipped and reported, so re-importing the
+// same roster is safe.
 func (s *Service) Import(ctx context.Context, r io.Reader) (ImportResult, error) {
 	rows, lines, err := s.parseCSV(r)
 	if err != nil {
@@ -172,7 +185,7 @@ func (s *Service) parseCSV(r io.Reader) ([]NewStudent, []int, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	codeCol, nameCol := -1, -1
+	codeCol, nameCol, dobCol := -1, -1, -1
 	for i, h := range header {
 		h = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(h, utf8BOM)))
 		switch h {
@@ -180,12 +193,15 @@ func (s *Service) parseCSV(r io.Reader) ([]NewStudent, []int, error) {
 			codeCol = i
 		case "full_name", "fullname":
 			nameCol = i
+		case "date_of_birth", "dob":
+			dobCol = i
 		}
 	}
-	if codeCol < 0 || nameCol < 0 {
-		return nil, nil, fmt.Errorf("%w: header must contain columns code and full_name", ErrInvalidInput)
+	if codeCol < 0 || nameCol < 0 || dobCol < 0 {
+		return nil, nil, fmt.Errorf("%w: header must contain columns full_name, code and date_of_birth", ErrInvalidInput)
 	}
 
+	now := time.Now()
 	var (
 		rows    []NewStudent
 		lines   []int
@@ -208,14 +224,18 @@ func (s *Service) parseCSV(r io.Reader) ([]NewStudent, []int, error) {
 		if len(rows)+len(rowErrs) >= MaxImportRows {
 			return nil, nil, fmt.Errorf("%w: more than %d rows", ErrInvalidInput, MaxImportRows)
 		}
-		var rawCode, rawName string
-		if codeCol < len(rec) {
-			rawCode = rec[codeCol]
+		field := func(col int) string {
+			if col < len(rec) {
+				return rec[col]
+			}
+			return ""
 		}
-		if nameCol < len(rec) {
-			rawName = rec[nameCol]
+		rawCode := field(codeCol)
+		code, name, err := normalize(rawCode, field(nameCol))
+		var dob time.Time
+		if err == nil {
+			dob, err = parseDateOfBirth(field(dobCol), now)
 		}
-		code, name, err := normalize(rawCode, rawName)
 		if err != nil {
 			rowErrs = append(rowErrs, RowError{Line: line, Code: strings.TrimSpace(rawCode), Error: strings.TrimPrefix(err.Error(), ErrInvalidInput.Error()+": ")})
 			continue
@@ -225,7 +245,7 @@ func (s *Service) parseCSV(r io.Reader) ([]NewStudent, []int, error) {
 			continue
 		}
 		seen[code] = line
-		rows = append(rows, NewStudent{Code: code, Fullname: name})
+		rows = append(rows, NewStudent{Code: code, Fullname: name, DateOfBirth: dob})
 		lines = append(lines, line)
 	}
 	if len(rowErrs) > 0 {
@@ -237,7 +257,7 @@ func (s *Service) parseCSV(r io.Reader) ([]NewStudent, []int, error) {
 
 	// Hash outside the DB transaction; bcrypt is the slow part.
 	for i := range rows {
-		hash, err := s.hasher.HashPassword(rows[i].Code)
+		hash, err := s.hasher.HashPassword(InitialPassword(rows[i].DateOfBirth))
 		if err != nil {
 			return nil, nil, err
 		}

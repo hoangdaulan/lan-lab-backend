@@ -526,7 +526,7 @@
             "in": "formData",
             "required": true,
             "type": "file",
-            "description": "CSV UTF-8, header code,fullname (hoặc code,full_name). Mã đã có sẽ bỏ qua; dữ liệu mẫu: TESTSV001,Nguyễn Văn An."
+            "description": "CSV UTF-8, header full_name,code,date_of_birth (họ tên, MSV, ngày sinh dd/mm/yyyy hoặc yyyy-mm-dd). Thiếu ngày sinh ở bất kỳ dòng nào thì từ chối cả file; mã đã có sẽ bỏ qua. Mật khẩu ban đầu = ngày sinh ddmmyyyy. Dữ liệu mẫu: Nguyễn Văn An,TESTSV001,05/09/2004."
           }
         ],
         "responses": {
@@ -574,7 +574,7 @@
         "tags": [
           "Sinh viên (GV)"
         ],
-        "summary": "Reset mật khẩu về code",
+        "summary": "Reset mật khẩu về ngày sinh (ddmmyyyy)",
         "operationId": "post__api_v1_students_id_reset-password",
         "parameters": [
           {
@@ -3133,7 +3133,7 @@
       "properties": {
         "current_password": {
           "type": "string",
-          "example": "TESTSV001"
+          "example": "05092004"
         },
         "new_password": {
           "type": "string",
@@ -3156,11 +3156,17 @@
         "fullname": {
           "type": "string",
           "example": "Nguyễn Văn An"
+        },
+        "date_of_birth": {
+          "type": "string",
+          "example": "05/09/2004",
+          "description": "dd/mm/yyyy hoặc yyyy-mm-dd; mật khẩu ban đầu = ddmmyyyy"
         }
       },
       "required": [
         "code",
-        "fullname"
+        "fullname",
+        "date_of_birth"
       ]
     },
     "ExamInput": {
@@ -3395,6 +3401,12 @@
         },
         "fullname": {
           "type": "string"
+        },
+        "date_of_birth": {
+          "type": "string",
+          "format": "date",
+          "x-nullable": true,
+          "example": "2004-09-05"
         },
         "created_at": {
           "type": "string",

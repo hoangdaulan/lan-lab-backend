@@ -68,7 +68,7 @@ function loginPage() {
         <button class="primary">Đăng nhập</button>
         <div class="errors" id="login-err"></div>
       </form>
-      <p class="muted small">Sinh viên: mật khẩu ban đầu là MSV — hãy đổi sau khi đăng nhập.</p>
+      <p class="muted small">Sinh viên: mật khẩu ban đầu là ngày sinh dạng ddmmyyyy (ví dụ 05/09/2004 → 05092004) — hãy đổi sau khi đăng nhập.</p>
     </div>`);
   const form = $('#login-form');
   form.onsubmit = (e) => {
